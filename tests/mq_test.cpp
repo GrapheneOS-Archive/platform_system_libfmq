@@ -108,8 +108,14 @@ void ReaderThreadBlocking(
 
     while (true) {
         uint32_t efState = 0;
-        android::status_t ret = efGroup->wait(kFmqNotEmpty, &efState, NULL);
-        ASSERT_EQ(android::NO_ERROR, ret);
+        android::status_t ret = efGroup->wait(kFmqNotEmpty,
+                                              &efState,
+                                              5000000000 /* timeoutNanoSeconds */);
+        /*
+         * Wait should not time out here after 5s
+         */
+        ASSERT_NE(android::TIMED_OUT, ret);
+
         if ((efState & kFmqNotEmpty) && fmq->read(data, dataLen)) {
             efGroup->wake(kFmqNotFull);
             break;
@@ -156,6 +162,30 @@ TEST_F(BlockingReadWrites, SmallInputTest1) {
 
     ASSERT_EQ(0, nanosleep(&waitTime, NULL));
     Reader.join();
+
+    status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
+    ASSERT_EQ(android::NO_ERROR, status);
+}
+
+/*
+ * Test that basic blocking times out as intended.
+ */
+TEST_F(BlockingReadWrites, BlockingTimeOutTest) {
+    android::hardware::EventFlag* efGroup = nullptr;
+    android::status_t status = android::hardware::EventFlag::createEventFlag(&fw, &efGroup);
+
+    ASSERT_EQ(android::NO_ERROR, status);
+    ASSERT_NE(nullptr, efGroup);
+
+    /* Block on an EventFlag bit that no one will wake and time out in 1s */
+    uint32_t efState = 0;
+    android::status_t ret = efGroup->wait(kFmqNotEmpty,
+                                          &efState,
+                                          1000000000 /* timeoutNanoSeconds */);
+    /*
+     * Wait should time out in a second.
+     */
+    EXPECT_EQ(android::TIMED_OUT, ret);
 
     status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
     ASSERT_EQ(android::NO_ERROR, status);
