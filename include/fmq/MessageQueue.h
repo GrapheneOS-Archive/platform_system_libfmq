@@ -43,8 +43,10 @@ struct MessageQueue {
      * that can contain a maximum of numElementsInQueue elements of type T.
      *
      * @param numElementsInQueue Capacity of the MessageQueue in terms of T.
+     * @param configureEventFlagWord Boolean that specifies if memory should
+     * also be allocated and mapped for an EventFlag word.
      */
-    MessageQueue(size_t numElementsInQueue);
+    MessageQueue(size_t numElementsInQueue, bool configureEventFlagWord = false);
 
     /**
      * @return Number of items of type T that can be written into the FMQ
@@ -123,6 +125,13 @@ struct MessageQueue {
      */
     const MQDescriptor<flavor>* getDesc() const { return mDesc.get(); }
 
+    /**
+     * Get a pointer to the Event Flag word if there is one associated with this FMQ.
+     *
+     * @return Pointer to an EventFlag word, will return nullptr if not configured
+     */
+    std::atomic<uint32_t>* getEventFlagWord() const { return mEvFlagWord; }
+
 private:
     struct region {
         uint8_t* address;
@@ -153,12 +162,14 @@ private:
     void initMemory(bool resetPointers);
 
     std::unique_ptr<MQDescriptor<flavor>> mDesc;
-    uint8_t* mRing;
+    uint8_t* mRing = nullptr;
     /*
      * TODO(b/31550092): Change to 32 bit read and write pointer counters.
      */
-    std::atomic<uint64_t>* mReadPtr;
-    std::atomic<uint64_t>* mWritePtr;
+    std::atomic<uint64_t>* mReadPtr = nullptr;
+    std::atomic<uint64_t>* mWritePtr = nullptr;
+
+    std::atomic<uint32_t>* mEvFlagWord = nullptr;
 };
 
 template <typename T, MQFlavor flavor>
@@ -203,6 +214,9 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
     mRing = reinterpret_cast<uint8_t*>(mapGrantorDescr
                                        (MQDescriptor<flavor>::DATAPTRPOS));
     CHECK(mRing != nullptr);
+
+    mEvFlagWord = static_cast<std::atomic<uint32_t>*>(
+      mapGrantorDescr(MQDescriptor<flavor>::EVFLAGWORDPOS));
 }
 
 template <typename T, MQFlavor flavor>
@@ -216,16 +230,25 @@ MessageQueue<T, flavor>::MessageQueue(const MQDescriptor<flavor>& Desc, bool res
 }
 
 template <typename T, MQFlavor flavor>
-MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue) {
-    size_t kQueueSizeBytes = numElementsInQueue * sizeof(T);
+MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue, bool configureEventFlagWord) {
     /*
      * The FMQ needs to allocate memory for the ringbuffer as well as for the
-     * read and write pointer counters. Also, Ashmem memory region size needs to
+     * read and write pointer counters. If an EventFlag word is to be configured,
+     * we also need to allocate memory for the same/
+     */
+    size_t kQueueSizeBytes = numElementsInQueue * sizeof(T);
+    size_t kMetaDataSize = 2 * sizeof(android::hardware::RingBufferPosition);
+
+    if (configureEventFlagWord) {
+        kMetaDataSize+= sizeof(std::atomic<uint32_t>);
+    }
+
+    /*
+     * Ashmem memory region size needs to
      * be specified in page-aligned bytes.
      */
     size_t kAshmemSizePageAligned =
-            (kQueueSizeBytes + 2 * sizeof(android::hardware::RingBufferPosition) +
-            PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+            (kQueueSizeBytes + kMetaDataSize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
     /*
      * Create an ashmem region to map the memory for the ringbuffer,
@@ -245,7 +268,10 @@ MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue) {
 
     mqHandle->data[0] = ashmemFd;
     mDesc = std::unique_ptr<MQDescriptor<flavor>>(
-            new (std::nothrow) MQDescriptor<flavor>(kQueueSizeBytes, mqHandle, sizeof(T)));
+            new (std::nothrow) MQDescriptor<flavor>(kQueueSizeBytes,
+                                                    mqHandle,
+                                                    sizeof(T),
+                                                    configureEventFlagWord));
     if (mDesc == nullptr) {
         return;
     }
@@ -262,6 +288,7 @@ MessageQueue<T, flavor>::~MessageQueue() {
     if (mWritePtr) unmapGrantorDescr(mWritePtr,
                                      MQDescriptor<flavor>::WRITEPTRPOS);
     if (mRing) unmapGrantorDescr(mRing, MQDescriptor<flavor>::DATAPTRPOS);
+    if (mEvFlagWord) unmapGrantorDescr(mEvFlagWord, MQDescriptor<flavor>::EVFLAGWORDPOS);
 }
 
 template <typename T, MQFlavor flavor>

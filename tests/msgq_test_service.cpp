@@ -21,6 +21,7 @@
 #include <hwbinder/ProcessState.h>
 #include <utils/Looper.h>
 #include <fmq/MessageQueue.h>
+#include <fmq/EventFlag.h>
 
 // libutils:
 using android::Looper;
@@ -110,11 +111,42 @@ public:
           return result;
       }
 
+      virtual Return<void> requestBlockingRead(int count) {
+          vector<uint16_t> data(count);
+          /*
+           * Get the EventFlag word from MessageQueue and configure an
+           * EventFlag object to use.
+           */
+          auto evFlagWordPtr = mFmqSynchronized->getEventFlagWord();
+          android::hardware::EventFlag* efGroup = nullptr;
+          android::status_t status = android::hardware::EventFlag::createEventFlag(evFlagWordPtr,
+                                                                                   &efGroup);
+          if ((status != android::NO_ERROR) || (efGroup == nullptr)) {
+              ALOGE("Unable to configure EventFlag");
+              return Void();
+          }
+          while (true) {
+              uint32_t efState = 0;
+              android::status_t ret = efGroup->wait(
+                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                      &efState,
+                      NULL);
+
+              if ((efState & ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY) &&
+                  mFmqSynchronized->read(&data[0], count)) {
+                  efGroup->wake(static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
+                  break;
+              }
+          }
+          return Void();
+      }
+
       virtual Return<void> configureFmqSyncReadWrite(
               ITestMsgQ::configureFmqSyncReadWrite_cb callback) {
           static constexpr size_t kNumElementsInQueue = 1024;
           mFmqSynchronized =
-                  new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(kNumElementsInQueue);
+                  new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(
+                          kNumElementsInQueue, true /* configureEventFlagWord */);
           if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
               callback(false /* ret */, MQDescriptorSync(
                       std::vector<android::hardware::GrantorDescriptor>(),
