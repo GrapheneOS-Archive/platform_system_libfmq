@@ -21,6 +21,7 @@
 
 #include <fmq/MessageQueue.h>
 #include <android/hardware/tests/msgq/1.0/ITestMsgQ.h>
+#include <fmq/EventFlag.h>
 
 // libutils:
 using android::OK;
@@ -109,6 +110,72 @@ bool verifyData(uint16_t* data, size_t count) {
         if (data[i] != i) return false;
     }
     return true;
+}
+
+/*
+ * Test that basic blocking works.
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingRead) {
+    const size_t dataLen = 64;
+    uint16_t data[dataLen] = {0};
+
+    /*
+     * Get the EventFlag word from MessageQueue and configure an
+     * EventFlag object to use.
+     */
+    auto evFlagWordPtr = mQueue->getEventFlagWord();
+    ASSERT_NE(nullptr, evFlagWordPtr);
+
+    /*
+     * This is the initial state for the EventFlag word.
+     */
+    std::atomic_fetch_or(evFlagWordPtr,
+                         static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
+
+    android::hardware::EventFlag* efGroup = nullptr;
+    android::status_t status = android::hardware::EventFlag::createEventFlag(
+            evFlagWordPtr, &efGroup);
+
+    ASSERT_EQ(android::NO_ERROR, status);
+    ASSERT_NE(nullptr, efGroup);
+
+    /*
+     * Request service to perform a blocking read. This call is oneway and will
+     * return immediately.
+     */
+    mService->requestBlockingRead(dataLen);
+
+    ASSERT_TRUE(mQueue->write(data, dataLen));
+    size_t available = mQueue->availableToWrite();
+
+    /*
+     * Sleep for 1s and make sure the data has not yet been read since we have not
+     * signalled the reader yet.
+     */
+    struct timespec waitTime = {1 /* tv_sec */, 0 /* tv_nsec */};
+    ASSERT_EQ(0, nanosleep(&waitTime, NULL));
+    ASSERT_EQ(available, mQueue->availableToWrite());
+
+    /*
+     * Signal that data is now available in queue to read.
+     */
+    status = efGroup->wake(static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY));
+    ASSERT_EQ(android::NO_ERROR, status);
+
+    while (true) {
+        uint32_t efState = 0;
+        android::status_t ret = efGroup->wait(
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                &efState,
+                NULL);
+
+        ASSERT_EQ(android::NO_ERROR, ret);
+        if (efState & ITestMsgQ::EventFlagBits::FMQ_NOT_FULL) {
+            break;
+        }
+    }
+    status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
+    ASSERT_EQ(android::NO_ERROR, status);
 }
 
 /* Request mService to write a small number of messages

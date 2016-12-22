@@ -164,7 +164,8 @@ status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, const struct times
         }
         *efState = 0;
     } else {
-        *efState = efWord & bitmask;
+        old = std::atomic_fetch_and(mEfWordPtr, ~bitmask);
+        *efState = old & bitmask;
     }
     return status;
 }
