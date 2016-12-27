@@ -130,8 +130,11 @@ public:
               android::status_t ret = efGroup->wait(
                       static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
                       &efState,
-                      NULL);
+                      5000000000 /* timeoutNanoSeconds */);
 
+              if (ret == android::TIMED_OUT) {
+                  return Void();
+              }
               if ((efState & ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY) &&
                   mFmqSynchronized->read(&data[0], count)) {
                   efGroup->wake(static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));

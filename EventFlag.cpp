@@ -72,9 +72,9 @@ status_t EventFlag::createEventFlag(std::atomic<uint32_t>* fwAddr,
  */
 EventFlag::EventFlag(int fd, off_t offset, status_t* status) {
     mEfWordPtr = static_cast<std::atomic<uint32_t>*>(mmap(NULL,
-                                                  sizeof(std::atomic<uint32_t>),
-                                                  PROT_READ | PROT_WRITE,
-                                                  MAP_SHARED, fd, offset));
+                                                          sizeof(std::atomic<uint32_t>),
+                                                          PROT_READ | PROT_WRITE,
+                                                          MAP_SHARED, fd, offset));
     mEfWordNeedsUnmapping = true;
     if (mEfWordPtr != MAP_FAILED) {
         *status = NO_ERROR;
@@ -117,7 +117,7 @@ status_t EventFlag::wake(uint32_t bitmask) {
      */
     if ((~old & bitmask) != 0) {
         int ret = syscall(__NR_futex, mEfWordPtr, FUTEX_WAKE_BITSET,
-                           INT_MAX, NULL, NULL, bitmask);
+                          INT_MAX, NULL, NULL, bitmask);
         if (ret == -1) {
             status = -errno;
             ALOGE("Error in event flag wake attempt: %s\n", strerror(errno));
@@ -130,7 +130,7 @@ status_t EventFlag::wake(uint32_t bitmask) {
  * Wait for any of the bits in the bitmask to be set
  * and return which bits caused the return.
  */
-status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, const struct timespec* timeout) {
+status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, int64_t timeoutNanoSeconds) {
     /*
      * Return early if there are no set bits in bitmask.
      */
@@ -156,7 +156,16 @@ status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, const struct times
      * value i.e. efWord. If the futex word contents have
      * changed, it fails with the error EAGAIN.
      */
-    int ret = syscall(__NR_futex, mEfWordPtr, FUTEX_WAIT_BITSET, efWord, timeout, NULL, bitmask);
+    int ret = 0;
+    if (timeoutNanoSeconds) {
+        struct timespec waitTimeAbsolute;
+        addNanosecondsToCurrentTime(timeoutNanoSeconds, &waitTimeAbsolute);
+
+        ret = syscall(__NR_futex, mEfWordPtr, FUTEX_WAIT_BITSET,
+                      efWord, &waitTimeAbsolute, NULL, bitmask);
+    } else {
+        ret = syscall(__NR_futex, mEfWordPtr, FUTEX_WAIT_BITSET, efWord, NULL, NULL, bitmask);
+    }
     if (ret == -1) {
         status = -errno;
         if (status != -EAGAIN) {
@@ -195,6 +204,19 @@ status_t EventFlag::deleteEventFlag(EventFlag** evFlag) {
     *evFlag = nullptr;
 
     return status;
+}
+
+void EventFlag::addNanosecondsToCurrentTime(int64_t nanoSeconds, struct timespec* waitTime) {
+    static constexpr int64_t kNanosPerSecond = 1000000000;
+
+    clock_gettime(CLOCK_MONOTONIC, waitTime);
+    waitTime->tv_sec += nanoSeconds / kNanosPerSecond;
+    waitTime->tv_nsec += nanoSeconds % kNanosPerSecond;
+
+    if (waitTime->tv_nsec >= kNanosPerSecond) {
+        waitTime->tv_sec++;
+        waitTime->tv_nsec -= kNanosPerSecond;
+    }
 }
 
 EventFlag::~EventFlag() {
