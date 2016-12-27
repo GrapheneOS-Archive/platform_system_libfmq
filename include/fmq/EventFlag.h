@@ -89,8 +89,8 @@ struct EventFlag {
      * Wait for any of the bits in the bit mask to be set.
      *
      * @param bitmask The bits to wait on.
-     * @param timeout Specifies the absolute timeout for the wait according
-     * to the CLOCK_MONOTONIC clock.
+     * @param timeoutNanoSeconds Specifies timeout duration in nanoseconds. It is converted to
+     * an absolute timeout for the wait according to the CLOCK_MONOTONIC clock.
      * @param efState The event flag bits that caused the return from wake.
      *
      * @return Returns a status_t error code. Likely error codes are
@@ -98,8 +98,7 @@ struct EventFlag {
      * parameters, TIMED_OUT if the wait timedout as per the timeout
      * parameter.
      */
-    status_t wait(uint32_t bitmask, uint32_t* efState,
-                  const struct timespec* timeout = nullptr);
+    status_t wait(uint32_t bitmask, uint32_t* efState, int64_t timeOutNanoSeconds = 0);
 
 private:
     bool mEfWordNeedsUnmapping = false;
@@ -128,6 +127,10 @@ private:
      */
     static status_t unmapEventFlagWord(std::atomic<uint32_t>* efWordPtr,
                                        bool* efWordNeedsUnmapping);
+    /*
+     * Utility method to convert timeout duration to an absolute value.
+     */
+    inline void addNanosecondsToCurrentTime(int64_t nanoseconds, struct timespec* timeAbs);
     ~EventFlag();
 };
 }  // namespace hardware
