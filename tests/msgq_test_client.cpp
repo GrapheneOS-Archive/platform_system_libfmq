@@ -167,9 +167,12 @@ TEST_F(SynchronizedReadWriteClient, BlockingRead) {
         android::status_t ret = efGroup->wait(
                 static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
                 &efState,
-                NULL);
+                5000000000 /* timeOutNanoSeconds */);
+        /*
+         * The wait timed out after 5 seconds if ret is android::TIMED_OUT.
+         */
+        ASSERT_NE(android::TIMED_OUT, ret);
 
-        ASSERT_EQ(android::NO_ERROR, ret);
         if (efState & ITestMsgQ::EventFlagBits::FMQ_NOT_FULL) {
             break;
         }
