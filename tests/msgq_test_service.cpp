@@ -148,9 +148,7 @@ public:
                   new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(
                           kNumElementsInQueue, true /* configureEventFlagWord */);
           if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
-              callback(false /* ret */, MQDescriptorSync(
-                      std::vector<android::hardware::GrantorDescriptor>(),
-                      nullptr /* nhandle */, 0 /* size */));
+              callback(false /* ret */, MQDescriptorSync());
           } else {
               callback(true /* ret */, *mFmqSynchronized->getDesc());
           }
@@ -165,10 +163,7 @@ public:
                           kNumElementsInQueue);
           if ((mFmqUnsynchronized == nullptr) ||
               (mFmqUnsynchronized->isValid() == false)) {
-              callback(false /* ret */,
-                       MQDescriptorUnsync(
-                               std::vector<android::hardware::GrantorDescriptor>(),
-                               nullptr /* nhandle */, 0 /* size */));
+              callback(false /* ret */, MQDescriptorUnsync());
           } else {
               callback(true /* ret */, *mFmqUnsynchronized->getDesc());
           }
