@@ -324,8 +324,13 @@ bool MessageQueue<T, flavor>::read(T* data, size_t count) {
      * due to the reader process being too slow, the read pointer counter
      * is set to the same as the write pointer counter to indicate error
      * and the read returns false;
+     * Need acquire/release memory ordering for mWritePtr.
      */
-    auto writePtr = mWritePtr->load(std::memory_order_relaxed);
+    auto writePtr = mWritePtr->load(std::memory_order_acquire);
+    /*
+     * A relaxed load is sufficient for mReadPtr since there will be no
+     * stores to mReadPtr from a different thread.
+     */
     auto readPtr = mReadPtr->load(std::memory_order_relaxed);
 
     if (writePtr - readPtr > mDesc->getSize()) {
@@ -396,13 +401,12 @@ void MessageQueue<T, flavor>::commitWrite(size_t nBytesWritten) {
 template <typename T, MQFlavor flavor>
 size_t MessageQueue<T, flavor>::availableToReadBytes() const {
     /*
-     * Doing relaxed loads here because these accesses don't carry dependencies.
-     * Dependent accesses won't happen until after a call to beginWrite or
-     * beginRead
-     * which do proper acquire/release.
+     * This method is invoked by implementations of both read() and write() and
+     * hence requries a memory_order_acquired load for both mReadPtr and
+     * mWritePtr.
      */
-    return mWritePtr->load(std::memory_order_relaxed) -
-            mReadPtr->load(std::memory_order_relaxed);
+    return mWritePtr->load(std::memory_order_acquire) -
+            mReadPtr->load(std::memory_order_acquire);
 }
 
 template <typename T, MQFlavor flavor>
