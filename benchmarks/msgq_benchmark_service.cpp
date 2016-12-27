@@ -184,7 +184,7 @@ public:
         mFmqInbox = new (std::nothrow) android::hardware::MessageQueue<uint8_t,
                           kSynchronizedReadWrite>(kNumElementsInQueue);
         if ((mFmqInbox == nullptr) || (mFmqInbox->isValid() == false)) {
-            callback(false /* ret */, android::hardware::MQDescriptorSync(
+            callback(false /* ret */, android::hardware::MQDescriptorSync<uint8_t>(
                            std::vector<android::hardware::GrantorDescriptor>(),
                            nullptr /* nhandle */, 0 /* size */));
         } else {
@@ -203,7 +203,7 @@ public:
         mFmqOutbox = new (std::nothrow) android::hardware::MessageQueue<uint8_t,
                            kSynchronizedReadWrite>(kNumElementsInQueue);
         if (mFmqOutbox == nullptr) {
-            callback(false /* ret */, android::hardware::MQDescriptorSync(
+            callback(false /* ret */, android::hardware::MQDescriptorSync<uint8_t>(
                     std::vector<android::hardware::GrantorDescriptor>(),
                     nullptr /* nhandle */, 0 /* size */));
         } else {
