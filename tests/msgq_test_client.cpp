@@ -62,7 +62,7 @@ class SynchronizedReadWriteClient : public ::testing::Test {
         mService = ITestMsgQ::getService(clientTests::kServiceName);
         ASSERT_NE(mService, nullptr);
         mService->configureFmqSyncReadWrite([this](
-                bool ret, const MQDescriptorSync& in) {
+                bool ret, const MQDescriptorSync<uint16_t>& in) {
             ASSERT_TRUE(ret);
             mQueue = new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(in);
         });
@@ -88,7 +88,7 @@ protected:
       mService = ITestMsgQ::getService(clientTests::kServiceName);
       ASSERT_NE(mService, nullptr);
       mService->configureFmqUnsyncWrite(
-              [this](bool ret, const MQDescriptorUnsync& in) {
+              [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
                   ASSERT_TRUE(ret);
                   mQueue = new (std::nothrow) MessageQueue<uint16_t, kUnsynchronizedWrite>(in);
               });

@@ -76,7 +76,8 @@ protected:
         /*
          * Request service to configure the client inbox queue.
          */
-        service->configureClientInboxSyncReadWrite([this](bool ret, const MQDescriptorSync& in) {
+        service->configureClientInboxSyncReadWrite([this](bool ret,
+                                                          const MQDescriptorSync<uint8_t>& in) {
           ASSERT_TRUE(ret);
           mFmqInbox = new (std::nothrow) MessageQueue<uint8_t, kSynchronizedReadWrite>(in);
         });
@@ -86,7 +87,8 @@ protected:
         /*
          * Reqeust service to configure the client outbox queue.
          */
-        service->configureClientOutboxSyncReadWrite([this](bool ret, const MQDescriptorSync& out) {
+        service->configureClientOutboxSyncReadWrite([this](bool ret,
+                                                           const MQDescriptorSync<uint8_t>& out) {
          ASSERT_TRUE(ret);
           mFmqOutbox = new (std::nothrow) MessageQueue<uint8_t,
                              kSynchronizedReadWrite>(out);

@@ -151,7 +151,7 @@ public:
                   new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(
                           kNumElementsInQueue, true /* configureEventFlagWord */);
           if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
-              callback(false /* ret */, MQDescriptorSync());
+              callback(false /* ret */, MQDescriptorSync<uint16_t>());
           } else {
               callback(true /* ret */, *mFmqSynchronized->getDesc());
           }
@@ -166,7 +166,7 @@ public:
                           kNumElementsInQueue);
           if ((mFmqUnsynchronized == nullptr) ||
               (mFmqUnsynchronized->isValid() == false)) {
-              callback(false /* ret */, MQDescriptorUnsync());
+              callback(false /* ret */, MQDescriptorUnsync<uint16_t>());
           } else {
               callback(true /* ret */, *mFmqUnsynchronized->getDesc());
           }
