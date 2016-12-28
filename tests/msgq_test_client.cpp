@@ -113,72 +113,134 @@ bool verifyData(uint16_t* data, size_t count) {
 }
 
 /*
- * Test that basic blocking works.
+ * Test that basic blocking works using readBlocking()/writeBlocking() APIs
+ * using the EventFlag object owned by FMQ.
  */
-TEST_F(SynchronizedReadWriteClient, BlockingRead) {
+TEST_F(SynchronizedReadWriteClient, BlockingReadWrite) {
     const size_t dataLen = 64;
     uint16_t data[dataLen] = {0};
-
-    /*
-     * Get the EventFlag word from MessageQueue and configure an
-     * EventFlag object to use.
-     */
-    auto evFlagWordPtr = mQueue->getEventFlagWord();
-    ASSERT_NE(nullptr, evFlagWordPtr);
-
-    /*
-     * This is the initial state for the EventFlag word.
-     */
-    std::atomic_fetch_or(evFlagWordPtr,
-                         static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
-
-    android::hardware::EventFlag* efGroup = nullptr;
-    android::status_t status = android::hardware::EventFlag::createEventFlag(
-            evFlagWordPtr, &efGroup);
-
-    ASSERT_EQ(android::NO_ERROR, status);
-    ASSERT_NE(nullptr, efGroup);
 
     /*
      * Request service to perform a blocking read. This call is oneway and will
      * return immediately.
      */
     mService->requestBlockingRead(dataLen);
+    bool ret = mQueue->writeBlocking(data,
+                                     dataLen,
+                                     static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                                     static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                                     5000000000 /* timeOutNanos */);
+    ASSERT_TRUE(ret);
+}
 
-    ASSERT_TRUE(mQueue->write(data, dataLen));
-    size_t available = mQueue->availableToWrite();
+/*
+ * Test that repeated blocking reads and writes work using readBlocking()/writeBlocking() APIs
+ * using the EventFlag object owned by FMQ.
+ * Each write operation writes the same amount of data as a single read
+ * operation.
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat1) {
+    const size_t dataLen = 64;
+    uint16_t data[dataLen] = {0};
 
     /*
-     * Sleep for 1s and make sure the data has not yet been read since we have not
-     * signalled the reader yet.
+     * Request service to perform a blocking read. This call is oneway and will
+     * return immediately.
      */
-    struct timespec waitTime = {1 /* tv_sec */, 0 /* tv_nsec */};
-    ASSERT_EQ(0, nanosleep(&waitTime, NULL));
-    ASSERT_EQ(available, mQueue->availableToWrite());
+    const size_t writeCount = 1024;
+    mService->requestBlockingReadRepeat(dataLen, writeCount);
 
-    /*
-     * Signal that data is now available in queue to read.
-     */
-    status = efGroup->wake(static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY));
-    ASSERT_EQ(android::NO_ERROR, status);
-
-    while (true) {
-        uint32_t efState = 0;
-        android::status_t ret = efGroup->wait(
+    for(size_t i = 0; i < writeCount; i++) {
+        bool ret = mQueue->writeBlocking(
+                data,
+                dataLen,
                 static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
-                &efState,
-                5000000000 /* timeOutNanoSeconds */);
-        /*
-         * The wait timed out after 5 seconds if ret is android::TIMED_OUT.
-         */
-        ASSERT_NE(android::TIMED_OUT, ret);
-
-        if (efState & ITestMsgQ::EventFlagBits::FMQ_NOT_FULL) {
-            break;
-        }
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                5000000000 /* timeOutNanos */);
+        ASSERT_TRUE(ret);
     }
-    status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
-    ASSERT_EQ(android::NO_ERROR, status);
+}
+
+/*
+ * Test that repeated blocking reads and writes work using readBlocking()/writeBlocking() APIs
+ * using the EventFlag object owned by FMQ. Each read operation reads twice the
+ * amount of data as a single write.
+ *
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat2) {
+    const size_t dataLen = 64;
+    uint16_t data[dataLen] = {0};
+
+    /*
+     * Request service to perform a blocking read. This call is oneway and will
+     * return immediately.
+     */
+    const size_t writeCount = 1024;
+    mService->requestBlockingReadRepeat(dataLen*2, writeCount/2);
+
+    for(size_t i = 0; i < writeCount; i++) {
+        bool ret = mQueue->writeBlocking(
+                data,
+                dataLen,
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                5000000000 /* timeOutNanos */);
+        ASSERT_TRUE(ret);
+    }
+}
+
+/*
+ * Test that basic blocking works using readBlocking()/writeBlocking() APIs
+ * using the EventFlag object owned by FMQ. Each write operation writes twice
+ * the amount of data as a single read.
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat3) {
+    const size_t dataLen = 64;
+    uint16_t data[dataLen] = {0};
+
+    /*
+     * Request service to perform a blocking read. This call is oneway and will
+     * return immediately.
+     */
+    size_t writeCount = 1024;
+    mService->requestBlockingReadRepeat(dataLen/2, writeCount*2);
+
+    for(size_t i = 0; i < writeCount; i++) {
+        bool ret = mQueue->writeBlocking(
+                data,
+                dataLen,
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                5000000000 /* timeOutNanos */);
+        ASSERT_TRUE(ret);
+    }
+}
+
+/*
+ * Test that writeBlocking()/readBlocking() APIs do not block on
+ * attempts to write/read 0 messages and return true.
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingReadWriteZeroMessages) {
+    uint16_t data = 0;
+
+    /*
+     * Trigger a blocking write for zero messages with no timeout.
+     */
+    bool ret = mQueue->writeBlocking(
+            &data,
+            0,
+            static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+            static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY));
+    ASSERT_TRUE(ret);
+
+    /*
+     * Trigger a blocking read for zero messages with no timeout.
+     */
+    ret = mQueue->readBlocking(&data,
+                               0,
+                               static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                               static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY));
+    ASSERT_TRUE(ret);
 }
 
 /* Request mService to write a small number of messages

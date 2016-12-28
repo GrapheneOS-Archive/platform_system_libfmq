@@ -14,6 +14,8 @@
 * limitations under the License.
 */
 
+#define LOG_TAG "FMQ_UnitTests"
+
 #include <android/hardware/tests/msgq/1.0/ITestMsgQ.h>
 #include <hidl/ServiceManagement.h>
 #include <hidl/HidlTransportSupport.h>
@@ -96,36 +98,37 @@ public:
 
       virtual Return<void> requestBlockingRead(int count) {
           vector<uint16_t> data(count);
-          /*
-           * Get the EventFlag word from MessageQueue and configure an
-           * EventFlag object to use.
-           */
-          auto evFlagWordPtr = mFmqSynchronized->getEventFlagWord();
-          android::hardware::EventFlag* efGroup = nullptr;
-          android::status_t status = android::hardware::EventFlag::createEventFlag(evFlagWordPtr,
-                                                                                   &efGroup);
-          if ((status != android::NO_ERROR) || (efGroup == nullptr)) {
-              ALOGE("Unable to configure EventFlag");
-              return Void();
-          }
-          while (true) {
-              uint32_t efState = 0;
-              android::status_t ret = efGroup->wait(
-                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
-                      &efState,
-                      5000000000 /* timeoutNanoSeconds */);
+          bool result = mFmqSynchronized->readBlocking(
+                  &data[0],
+                  count,
+                  static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                  static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                  5000000000 /* timeOutNanos */);
 
-              if (ret == android::TIMED_OUT) {
-                  return Void();
-              }
-              if ((efState & ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY) &&
-                  mFmqSynchronized->read(&data[0], count)) {
-                  efGroup->wake(static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
+          if (result == false) {
+              ALOGE("Blocking read fails");
+          }
+          return Void();
+      }
+
+      virtual Return<void> requestBlockingReadRepeat(int count, int numIter) {
+          vector<uint16_t> data(count);
+          for (int i = 0; i < numIter; i++) {
+              bool result = mFmqSynchronized->readBlocking(
+                      &data[0],
+                      count,
+                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                      5000000000 /* timeOutNanos */);
+
+              if (result == false) {
+                  ALOGE("Blocking read fails");
                   break;
               }
           }
           return Void();
       }
+
 
       virtual Return<void> configureFmqSyncReadWrite(
               ITestMsgQ::configureFmqSyncReadWrite_cb callback) {
@@ -136,6 +139,14 @@ public:
           if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
               callback(false /* ret */, MQDescriptorSync<uint16_t>());
           } else {
+              /*
+               * Initialize the EventFlag word with bit FMQ_NOT_FULL.
+               */
+              auto evFlagWordPtr = mFmqSynchronized->getEventFlagWord();
+              if (evFlagWordPtr != nullptr) {
+                  std::atomic_init(evFlagWordPtr,
+                                   static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
+              }
               callback(true /* ret */, *mFmqSynchronized->getDesc());
           }
           return Void();
