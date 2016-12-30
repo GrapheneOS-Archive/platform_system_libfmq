@@ -16,9 +16,7 @@
 
 #include <android/hardware/tests/msgq/1.0/ITestMsgQ.h>
 #include <hidl/ServiceManagement.h>
-#include <hwbinder/IInterface.h>
-#include <hwbinder/IPCThreadState.h>
-#include <hwbinder/ProcessState.h>
+#include <hidl/HidlTransportSupport.h>
 #include <utils/Looper.h>
 #include <fmq/MessageQueue.h>
 #include <fmq/EventFlag.h>
@@ -29,13 +27,9 @@ using android::LooperCallback;
 using android::OK;
 using android::sp;
 
-// libhwbinder:
-using android::hardware::BnInterface;
-using android::hardware::defaultServiceManager;
-using android::hardware::IInterface;
-using android::hardware::IPCThreadState;
-using android::hardware::Parcel;
-using android::hardware::ProcessState;
+// libhidl:
+using android::hardware::configureRpcThreadpool;
+using android::hardware::joinRpcThreadpool;
 using android::hardware::Return;
 using android::hardware::Void;
 
@@ -57,17 +51,6 @@ using android::hardware::tests::msgq::V1_0::ITestMsgQ;
 const char kServiceName[] = "android.hardware.tests.msgq@1.0::ITestMsgQ";
 
 namespace {
-
-class BinderCallback : public LooperCallback {
-public:
-    BinderCallback() {}
-    ~BinderCallback() override {}
-
-    int handleEvent(int /* fd */, int /* events */, void* /* data */) override {
-        IPCThreadState::self()->handlePolledCommands();
-        return 1;  // Continue receiving callbacks.
-    }
-};
 
 class TestMsgQ : public ITestMsgQ {
 public:
@@ -192,27 +175,11 @@ private:
 
 int Run() {
     android::sp<TestMsgQ> service = new TestMsgQ;
-    sp<Looper> looper(Looper::prepare(0 /* opts */));
 
-    int binderFd = -1;
-    ProcessState::self()->setThreadPoolMaxThreadCount(0);
-    IPCThreadState::self()->disableBackgroundScheduling(true);
-    IPCThreadState::self()->setupPolling(&binderFd);
-    if (binderFd < 0) return -1;
-
-    sp<BinderCallback> cb(new BinderCallback);
-    if (looper->addFd(binderFd, Looper::POLL_CALLBACK, Looper::EVENT_INPUT, cb,
-                      nullptr) != 1) {
-        ALOGE("Failed to add binder FD to Looper");
-        return -1;
-    }
+    configureRpcThreadpool(1, true /*callerWillJoin*/);
     service->registerAsService(kServiceName);
+    joinRpcThreadpool();
 
-    ALOGI("Entering loop");
-    while (true) {
-        const int result = looper->pollAll(-1 /* timeoutMillis */);
-        ALOGI("Looper returned %d", result);
-    }
     return 0;
 }
 
