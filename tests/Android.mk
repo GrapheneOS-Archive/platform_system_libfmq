@@ -44,7 +44,8 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libutils \
     libbase \
-    libfmq
+    libfmq \
+    liblog
 
 LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
 LOCAL_MODULE := mq_test_client
