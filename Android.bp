@@ -22,6 +22,7 @@ cc_library_shared {
     export_shared_lib_headers: [
         "libcutils",
         "libutils",
+        "liblog"
     ],
     export_include_dirs: ["include"],
     local_include_dirs: ["include"],
