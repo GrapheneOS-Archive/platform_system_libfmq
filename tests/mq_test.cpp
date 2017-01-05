@@ -83,10 +83,14 @@ protected:
         ASSERT_TRUE(mQueue->isValid());
         mNumMessagesMax = mQueue->getQuantumCount();
         ASSERT_EQ(kNumElementsInQueue, mNumMessagesMax);
+        /*
+         * Initialize the EventFlag word to indicate Queue is not full.
+         */
+        std::atomic_init(&mFw, static_cast<uint32_t>(kFmqNotFull));
     }
 
     android::hardware::MessageQueue<uint8_t, android::hardware::kSynchronizedReadWrite>* mQueue;
-    std::atomic<uint32_t> fw;
+    std::atomic<uint32_t> mFw;
     size_t mNumMessagesMax = 0;
 };
 
@@ -127,20 +131,40 @@ void ReaderThreadBlocking(
 }
 
 /*
- * Test that basic blocking works.
+ * This thread will attempt to read and block using the readBlocking() API and
+ * passes in a pointer to an EventFlag object.
+ */
+void ReaderThreadBlocking2(
+        android::hardware::MessageQueue<uint8_t,
+        android::hardware::kSynchronizedReadWrite>* fmq,
+        std::atomic<uint32_t>* fwAddr) {
+    const size_t dataLen = 64;
+    uint8_t data[dataLen];
+    android::hardware::EventFlag* efGroup = nullptr;
+    android::status_t status = android::hardware::EventFlag::createEventFlag(fwAddr, &efGroup);
+    ASSERT_EQ(android::NO_ERROR, status);
+    ASSERT_NE(nullptr, efGroup);
+    bool ret = fmq->readBlocking(data,
+                                 dataLen,
+                                 static_cast<uint32_t>(kFmqNotFull),
+                                 static_cast<uint32_t>(kFmqNotEmpty),
+                                 5000000000 /* timeOutNanos */,
+                                 efGroup);
+    ASSERT_TRUE(ret);
+    status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
+    ASSERT_EQ(android::NO_ERROR, status);
+}
+
+/*
+ * Test that basic blocking works. This test uses the non-blocking read()/write()
+ * APIs.
  */
 TEST_F(BlockingReadWrites, SmallInputTest1) {
     const size_t dataLen = 64;
     uint8_t data[dataLen] = {0};
 
-    /*
-     * This is the initial state for the futex word
-     * that will create the Event Flag group.
-     */
-    std::atomic_fetch_or(&fw, static_cast<uint32_t>(kFmqNotFull));
-
     android::hardware::EventFlag* efGroup = nullptr;
-    android::status_t status = android::hardware::EventFlag::createEventFlag(&fw, &efGroup);
+    android::status_t status = android::hardware::EventFlag::createEventFlag(&mFw, &efGroup);
 
     ASSERT_EQ(android::NO_ERROR, status);
     ASSERT_NE(nullptr, efGroup);
@@ -148,7 +172,7 @@ TEST_F(BlockingReadWrites, SmallInputTest1) {
     /*
      * Start a thread that will try to read and block on kFmqNotEmpty.
      */
-    std::thread Reader(ReaderThreadBlocking, mQueue, &fw);
+    std::thread Reader(ReaderThreadBlocking, mQueue, &mFw);
     struct timespec waitTime = {0, 100 * 1000000};
     ASSERT_EQ(0, nanosleep(&waitTime, NULL));
 
@@ -168,11 +192,43 @@ TEST_F(BlockingReadWrites, SmallInputTest1) {
 }
 
 /*
+ * Test that basic blocking works. This test uses the
+ * writeBlocking()/readBlocking() APIs.
+ */
+TEST_F(BlockingReadWrites, SmallInputTest2) {
+    const size_t dataLen = 64;
+    uint8_t data[dataLen] = {0};
+
+    android::hardware::EventFlag* efGroup = nullptr;
+    android::status_t status = android::hardware::EventFlag::createEventFlag(&mFw, &efGroup);
+
+    ASSERT_EQ(android::NO_ERROR, status);
+    ASSERT_NE(nullptr, efGroup);
+
+    /*
+     * Start a thread that will try to read and block on kFmqNotEmpty. It will
+     * call wake() on kFmqNotFull when the read is successful.
+     */
+    std::thread Reader(ReaderThreadBlocking2, mQueue, &mFw);
+    bool ret = mQueue->writeBlocking(data,
+                                     dataLen,
+                                     static_cast<uint32_t>(kFmqNotFull),
+                                     static_cast<uint32_t>(kFmqNotEmpty),
+                                     5000000000 /* timeOutNanos */,
+                                     efGroup);
+    ASSERT_TRUE(ret);
+    Reader.join();
+
+    status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
+    ASSERT_EQ(android::NO_ERROR, status);
+}
+
+/*
  * Test that basic blocking times out as intended.
  */
 TEST_F(BlockingReadWrites, BlockingTimeOutTest) {
     android::hardware::EventFlag* efGroup = nullptr;
-    android::status_t status = android::hardware::EventFlag::createEventFlag(&fw, &efGroup);
+    android::status_t status = android::hardware::EventFlag::createEventFlag(&mFw, &efGroup);
 
     ASSERT_EQ(android::NO_ERROR, status);
     ASSERT_NE(nullptr, efGroup);

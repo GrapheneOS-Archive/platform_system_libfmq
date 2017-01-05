@@ -18,11 +18,13 @@
 #define HIDL_MQ_H
 
 #include <android-base/logging.h>
-#include <cutils/ashmem.h>
-#include <hidl/MQDescriptor.h>
-#include <sys/mman.h>
 #include <atomic>
+#include <cutils/ashmem.h>
+#include <fmq/EventFlag.h>
+#include <hidl/MQDescriptor.h>
 #include <new>
+#include <sys/mman.h>
+#include <utils/Log.h>
 
 namespace android {
 namespace hardware {
@@ -40,7 +42,7 @@ struct MessageQueue {
 
     /**
      * This constructor uses Ashmem shared memory to create an FMQ
-     * that can contain a maximum of numElementsInQueue elements of type T.
+     * that can contain a maximum of 'numElementsInQueue' elements of type T.
      *
      * @param numElementsInQueue Capacity of the MessageQueue in terms of T.
      * @param configureEventFlagWord Boolean that specifies if memory should
@@ -109,6 +111,48 @@ struct MessageQueue {
     bool write(const T* data, size_t count);
 
     /**
+     * Perform a blocking write of 'count' items into the FMQ using EventFlags.
+     * Does not support partial writes.
+     *
+     * If 'evFlag' is nullptr, it is checked whether there is an EventFlag object
+     * associated with the FMQ and it is used in that case.
+     *
+     * The application code must ensure that 'evFlag' used by the
+     * reader(s)/writer is based upon the same EventFlag word.
+     *
+     * The method will return false without blocking if any of the following
+     * conditions are true:
+     * - If 'evFlag' is nullptr and the FMQ does not own an EventFlag object.
+     * - If the flavor of the FMQ is synchronized and the 'readNotification' bit mask is zero.
+     * - If 'count' is greater than the FMQ size.
+     *
+     * If the flavor of the FMQ is synchronized and there is insufficient space
+     * available to write into it, the EventFlag bit mask 'readNotification' is
+     * is waited upon.
+     *
+     * Upon a successful write, wake is called on 'writeNotification' (if
+     * non-zero).
+     *
+     * @param data Pointer to the array of items of type T.
+     * @param count Number of items in array.
+     * @param readNotification The EventFlag bit mask to wait on if there is not
+     * enough space in FMQ to write 'count' items.
+     * @param writeNotification The EventFlag bit mask to call wake on
+     * a successful write. No wake is called if 'writeNotification' is zero.
+     * @param timeOutNanos Number of nanoseconds after which the blocking
+     * write attempt is aborted.
+     * @param evFlag The EventFlag object to be used for blocking. If nullptr,
+     * it is checked whether the FMQ owns an EventFlag object and that is used
+     * for blocking instead.
+     *
+     * @return Whether the write was successful.
+     */
+
+    bool writeBlocking(const T* data, size_t count, uint32_t readNotification,
+                       uint32_t writeNotification, int64_t timeOutNanos = 0,
+                       android::hardware::EventFlag* evFlag = nullptr);
+
+    /**
      * Read some data from the FMQ without blocking.
      *
      * @param data Pointer to the array to which read data is to be written.
@@ -119,6 +163,42 @@ struct MessageQueue {
     bool read(T* data, size_t count);
 
     /**
+     * Perform a blocking read operation of 'count' items from the FMQ. Does not
+     * perform a partial read.
+     *
+     * If 'evFlag' is nullptr, it is checked whether there is an EventFlag object
+     * associated with the FMQ and it is used in that case.
+     *
+     * The application code must ensure that 'evFlag' used by the
+     * reader(s)/writer is based upon the same EventFlag word.
+     *
+     * The method will return false without blocking if any of the following
+     * conditions are true:
+     * -If 'evFlag' is nullptr and the FMQ does not own an EventFlag object.
+     * -If the 'writeNotification' bit mask is zero.
+     * -If 'count' is greater than the FMQ size.
+     *
+     * If FMQ does not contain 'count' items, the eventFlag bit mask
+     * 'writeNotification' is waited upon. Upon a successful read from the FMQ,
+     * wake is called on 'readNotification' (if non-zero).
+     *
+     * @param data Pointer to the array to which read data is to be written.
+     * @param count Number of items to be read.
+     * @param readNotification The EventFlag bit mask to call wake on after
+     * a successful read. No wake is called if 'readNotification' is zero.
+     * @param writeNotification The EventFlag bit mask to call a wait on
+     * if there is insufficient data in the FMQ to be read.
+     * @param timeOutNanos Number of nanoseconds after which the blocking
+     * read attempt is aborted.
+     * @param evFlag The EventFlag object to be used for blocking.
+     *
+     * @return Whether the read was successful.
+     */
+    bool readBlocking(T* data, size_t count, uint32_t readNotification,
+                      uint32_t writeNotification, int64_t timeOutNanos = 0,
+                      android::hardware::EventFlag* evFlag = nullptr);
+
+    /**
      * Get a pointer to the MQDescriptor object that describes this FMQ.
      *
      * @return Pointer to the MQDescriptor associated with the FMQ.
@@ -126,12 +206,13 @@ struct MessageQueue {
     const MQDescriptor<T, flavor>* getDesc() const { return mDesc.get(); }
 
     /**
-     * Get a pointer to the Event Flag word if there is one associated with this FMQ.
+     * Get a pointer to the EventFlag word if there is one associated with this FMQ.
      *
-     * @return Pointer to an EventFlag word, will return nullptr if not configured
+     * @return Pointer to an EventFlag word, will return nullptr if not
+     * configured. This method does not transfer ownership. The EventFlag
+     * word will be unmapped by the MessageQueue destructor.
      */
     std::atomic<uint32_t>* getEventFlagWord() const { return mEvFlagWord; }
-
 private:
     struct region {
         uint8_t* address;
@@ -170,6 +251,12 @@ private:
     std::atomic<uint64_t>* mWritePtr = nullptr;
 
     std::atomic<uint32_t>* mEvFlagWord = nullptr;
+
+    /*
+     * This EventFlag object will be owned by the FMQ and will have the same
+     * lifetime.
+     */
+    android::hardware::EventFlag* mEventFlag = nullptr;
 };
 
 template <typename T, MQFlavor flavor>
@@ -217,6 +304,9 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
 
     mEvFlagWord = static_cast<std::atomic<uint32_t>*>(
       mapGrantorDescr(MQDescriptor<T, flavor>::EVFLAGWORDPOS));
+    if (mEvFlagWord != nullptr) {
+        android::hardware::EventFlag::createEventFlag(mEvFlagWord, &mEventFlag);
+    }
 }
 
 template <typename T, MQFlavor flavor>
@@ -285,10 +375,17 @@ MessageQueue<T, flavor>::~MessageQueue() {
     } else {
         unmapGrantorDescr(mReadPtr, MQDescriptor<T, flavor>::READPTRPOS);
     }
-    if (mWritePtr) unmapGrantorDescr(mWritePtr,
+    if (mWritePtr != nullptr) {
+        unmapGrantorDescr(mWritePtr,
                                      MQDescriptor<T, flavor>::WRITEPTRPOS);
-    if (mRing) unmapGrantorDescr(mRing, MQDescriptor<T, flavor>::DATAPTRPOS);
-    if (mEvFlagWord) unmapGrantorDescr(mEvFlagWord, MQDescriptor<T, flavor>::EVFLAGWORDPOS);
+    }
+    if (mRing != nullptr) {
+        unmapGrantorDescr(mRing, MQDescriptor<T, flavor>::DATAPTRPOS);
+    }
+    if (mEvFlagWord != nullptr) {
+        unmapGrantorDescr(mEvFlagWord, MQDescriptor<T, flavor>::EVFLAGWORDPOS);
+        android::hardware::EventFlag::deleteEventFlag(&mEventFlag);
+    }
 }
 
 template <typename T, MQFlavor flavor>
@@ -313,6 +410,205 @@ bool MessageQueue<T, flavor>::write(const T* data, size_t count) {
 
     return (writeBytes(reinterpret_cast<const uint8_t*>(data),
                        sizeof(T) * count) == sizeof(T) * count);
+}
+
+template <typename T, MQFlavor flavor>
+bool MessageQueue<T, flavor>::writeBlocking(const T* data,
+                                            size_t count,
+                                            uint32_t readNotification,
+                                            uint32_t writeNotification,
+                                            int64_t timeOutNanos,
+                                            android::hardware::EventFlag* evFlag) {
+    /*
+     * If evFlag is null and the FMQ does not have its own EventFlag object
+     * return false;
+     * If the flavor is kSynchronizedReadWrite and the readNotification
+     * bit mask is zero return false;
+     * If the count is greater than queue size, return false
+     * to prevent blocking until timeOut.
+     */
+    if (evFlag == nullptr) {
+        evFlag = mEventFlag;
+        if (evFlag == nullptr) {
+            return false;
+        }
+    }
+
+    if ((readNotification == 0 && flavor == kSynchronizedReadWrite) ||
+        (count > getQuantumCount())) {
+        return false;
+    }
+
+    /*
+     * There is no need to wait for a readNotification if the flavor
+     * of the queue is kUnsynchronizedWrite or sufficient space to write
+     * is already present in the FMQ. The latter would be the case when
+     * read operations read more number of messages than
+     * write operations write. In other words, a single large read may clear the FMQ
+     * after multiple small writes. This would fail to clear a pending
+     * readNotification bit since EventFlag bits can only be cleared
+     * by a wait() call, however the bit would be correctly cleared by the next
+     * blockingWrite() call.
+     */
+
+    bool result = write(data, count);
+    if (result) {
+        if (writeNotification) {
+            evFlag->wake(writeNotification);
+        }
+        return result;
+    }
+
+    bool endWait = false;
+    while (endWait == false) {
+        uint32_t efState = 0;
+        /*
+         * wait() will return immediately if there was a pending read
+         * notification.
+         */
+        status_t status = evFlag->wait(readNotification, &efState, timeOutNanos);
+        switch(status) {
+            case android::NO_ERROR:
+                /*
+                 * If wait() returns NO_ERROR, break and check efState.
+                 */
+                break;
+            case android::TIMED_OUT:
+                /*
+                 * If wait() returns android::TIMEDOUT, break out of the while loop
+                 * and return false;
+                 */
+                endWait = true;
+                continue;
+            case -EAGAIN:
+            case -EINTR:
+                /*
+                 * For errors -EAGAIN and -EINTR, go back to wait.
+                 */
+                continue;
+            default:
+                /*
+                 * Throw an error for any other error code since it is unexpected.
+                 */
+
+                endWait = true;
+                ALOGE("Unexpected error code from EventFlag Wait %d", status);
+                continue;
+        }
+
+        /*
+         * If the wake() was not due to the readNotification bit or if
+         * there is still insufficient space to write to the FMQ,
+         * keep waiting for another readNotification.
+         */
+        if ((efState & readNotification) && write(data, count)) {
+            if (writeNotification) {
+                evFlag->wake(writeNotification);
+            }
+            result = true;
+            endWait = true;
+        }
+    }
+
+    return result;
+}
+
+template <typename T, MQFlavor flavor>
+bool MessageQueue<T, flavor>::readBlocking(T* data,
+                                           size_t count,
+                                           uint32_t readNotification,
+                                           uint32_t writeNotification,
+                                           int64_t timeOutNanos,
+                                           android::hardware::EventFlag* evFlag) {
+    /*
+     * If evFlag is null and the FMQ does not own its own EventFlag object
+     * return false;
+     * If the writeNotification bit mask is zero return false;
+     * If the count is greater than queue size, return false to prevent
+     * blocking until timeOut.
+     */
+    if (evFlag == nullptr) {
+        evFlag = mEventFlag;
+        if (evFlag == nullptr) {
+            return false;
+        }
+    }
+
+    if (writeNotification == 0 || count > getQuantumCount()) {
+        return false;
+    }
+
+    /*
+     * There is no need to wait for a write notification if sufficient
+     * data to read is already present in the FMQ. This would be the
+     * case when read operations read lesser number of messages than
+     * a write operation and multiple reads would be required to clear the queue
+     * after a single write operation. This check would fail to clear a pending
+     * writeNotification bit since EventFlag bits can only be cleared
+     * by a wait() call, however the bit would be correctly cleared by the next
+     * readBlocking() call.
+     */
+
+    bool result = read(data, count);
+    if (result) {
+        if (readNotification) {
+            evFlag->wake(readNotification);
+        }
+        return result;
+    }
+
+    bool endWait = false;
+    while (endWait == false) {
+        uint32_t efState = 0;
+        /*
+         * wait() will return immediately if there was a pending write
+         * notification.
+         */
+        status_t status = evFlag->wait(writeNotification, &efState, timeOutNanos);
+        switch(status) {
+            case android::NO_ERROR:
+                /*
+                 * If wait() returns NO_ERROR, break and check efState.
+                 */
+                break;
+            case android::TIMED_OUT:
+                /*
+                 * If wait() returns android::TIMEDOUT, break out of the while loop
+                 * and return false;
+                 */
+                endWait = true;
+                continue;
+            case -EAGAIN:
+            case -EINTR:
+                /*
+                 * For errors -EAGAIN and -EINTR, go back to wait.
+                 */
+                continue;
+            default:
+                /*
+                 * Throw an error for any other error code since it is unexpected.
+                 */
+
+                endWait = true;
+                ALOGE("Unexpected error code from EventFlag Wait %d", status);
+                continue;
+        }
+
+        /*
+         * If the wake() was not due to the writeNotification bit being set
+         * or if the data in FMQ is still insufficient, go back to waiting
+         * for another write notification.
+         */
+        if ((efState & writeNotification) && read(data, count)) {
+            if (readNotification) {
+                evFlag->wake(readNotification);
+            }
+            result = true;
+            endWait = true;
+        }
+    }
+
+    return result;
 }
 
 template <typename T, MQFlavor flavor>
