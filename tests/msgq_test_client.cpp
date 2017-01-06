@@ -51,7 +51,7 @@ const char kServiceName[] = "android.hardware.tests.msgq@1.0::ITestMsgQ";
 }  // namespace android
 
 class SynchronizedReadWriteClient : public ::testing::Test {
- protected:
+protected:
     virtual void TearDown() {
         delete mQueue;
     }
