@@ -31,12 +31,14 @@ namespace hardware {
 
 template <typename T, MQFlavor flavor>
 struct MessageQueue {
+    typedef MQDescriptor<T,flavor> Descriptor;
+
     /**
      * @param Desc MQDescriptor describing the FMQ.
      * @param resetPointers bool indicating whether the read/write pointers
      * should be reset or not.
      */
-    MessageQueue(const MQDescriptor<T, flavor>& Desc, bool resetPointers = true);
+    MessageQueue(const Descriptor& Desc, bool resetPointers = true);
 
     ~MessageQueue();
 
@@ -203,7 +205,7 @@ struct MessageQueue {
      *
      * @return Pointer to the MQDescriptor associated with the FMQ.
      */
-    const MQDescriptor<T, flavor>* getDesc() const { return mDesc.get(); }
+    const Descriptor* getDesc() const { return mDesc.get(); }
 
     /**
      * Get a pointer to the EventFlag word if there is one associated with this FMQ.
@@ -242,7 +244,7 @@ private:
     void unmapGrantorDescr(void* address, uint32_t grantorIdx);
     void initMemory(bool resetPointers);
 
-    std::unique_ptr<MQDescriptor<T, flavor>> mDesc;
+    std::unique_ptr<Descriptor> mDesc;
     uint8_t* mRing = nullptr;
     /*
      * TODO(b/31550092): Change to 32 bit read and write pointer counters.
@@ -266,15 +268,14 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
      * the native_handle is valid and T matches quantum size.
      */
     if ((mDesc == nullptr) || !mDesc->isHandleValid() ||
-        (mDesc->countGrantors() < MQDescriptor<T, flavor>::kMinGrantorCount) ||
+        (mDesc->countGrantors() < Descriptor::kMinGrantorCount) ||
         (mDesc->getQuantum() != sizeof(T))) {
         return;
     }
 
     if (flavor == kSynchronizedReadWrite) {
-        mReadPtr =
-                reinterpret_cast<std::atomic<uint64_t>*>
-                (mapGrantorDescr(MQDescriptor<T, flavor>::READPTRPOS));
+        mReadPtr = reinterpret_cast<std::atomic<uint64_t>*>(
+                mapGrantorDescr(Descriptor::READPTRPOS));
     } else {
         /*
          * The unsynchronized write flavor of the FMQ may have multiple readers
@@ -286,8 +287,7 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
     CHECK(mReadPtr != nullptr);
 
     mWritePtr =
-            reinterpret_cast<std::atomic<uint64_t>*>
-            (mapGrantorDescr(MQDescriptor<T, flavor>::WRITEPTRPOS));
+            reinterpret_cast<std::atomic<uint64_t>*>(mapGrantorDescr(Descriptor::WRITEPTRPOS));
     CHECK(mWritePtr != nullptr);
 
     if (resetPointers) {
@@ -298,20 +298,18 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
         mReadPtr->store(0, std::memory_order_release);
     }
 
-    mRing = reinterpret_cast<uint8_t*>(mapGrantorDescr
-                                       (MQDescriptor<T, flavor>::DATAPTRPOS));
+    mRing = reinterpret_cast<uint8_t*>(mapGrantorDescr(Descriptor::DATAPTRPOS));
     CHECK(mRing != nullptr);
 
-    mEvFlagWord = static_cast<std::atomic<uint32_t>*>(
-      mapGrantorDescr(MQDescriptor<T, flavor>::EVFLAGWORDPOS));
+    mEvFlagWord = static_cast<std::atomic<uint32_t>*>(mapGrantorDescr(Descriptor::EVFLAGWORDPOS));
     if (mEvFlagWord != nullptr) {
         android::hardware::EventFlag::createEventFlag(mEvFlagWord, &mEventFlag);
     }
 }
 
 template <typename T, MQFlavor flavor>
-MessageQueue<T, flavor>::MessageQueue(const MQDescriptor<T, flavor>& Desc, bool resetPointers) {
-    mDesc = std::unique_ptr<MQDescriptor<T, flavor>>(new (std::nothrow) MQDescriptor<T, flavor>(Desc));
+MessageQueue<T, flavor>::MessageQueue(const Descriptor& Desc, bool resetPointers) {
+    mDesc = std::unique_ptr<Descriptor>(new (std::nothrow) Descriptor(Desc));
     if (mDesc == nullptr) {
         return;
     }
@@ -357,11 +355,10 @@ MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue, bool configureE
     }
 
     mqHandle->data[0] = ashmemFd;
-    mDesc = std::unique_ptr<MQDescriptor<T, flavor>>(
-            new (std::nothrow) MQDescriptor<T, flavor>(kQueueSizeBytes,
-                                                    mqHandle,
-                                                    sizeof(T),
-                                                    configureEventFlagWord));
+    mDesc = std::unique_ptr<Descriptor>(new (std::nothrow) Descriptor(kQueueSizeBytes,
+                                                                      mqHandle,
+                                                                      sizeof(T),
+                                                                      configureEventFlagWord));
     if (mDesc == nullptr) {
         return;
     }
@@ -373,17 +370,16 @@ MessageQueue<T, flavor>::~MessageQueue() {
     if (flavor == kUnsynchronizedWrite) {
         delete mReadPtr;
     } else {
-        unmapGrantorDescr(mReadPtr, MQDescriptor<T, flavor>::READPTRPOS);
+        unmapGrantorDescr(mReadPtr, Descriptor::READPTRPOS);
     }
     if (mWritePtr != nullptr) {
-        unmapGrantorDescr(mWritePtr,
-                                     MQDescriptor<T, flavor>::WRITEPTRPOS);
+        unmapGrantorDescr(mWritePtr, Descriptor::WRITEPTRPOS);
     }
     if (mRing != nullptr) {
-        unmapGrantorDescr(mRing, MQDescriptor<T, flavor>::DATAPTRPOS);
+        unmapGrantorDescr(mRing, Descriptor::DATAPTRPOS);
     }
     if (mEvFlagWord != nullptr) {
-        unmapGrantorDescr(mEvFlagWord, MQDescriptor<T, flavor>::EVFLAGWORDPOS);
+        unmapGrantorDescr(mEvFlagWord, Descriptor::EVFLAGWORDPOS);
         android::hardware::EventFlag::deleteEventFlag(&mEventFlag);
     }
 }
