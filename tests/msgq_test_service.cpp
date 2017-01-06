@@ -56,132 +56,134 @@ namespace {
 
 class TestMsgQ : public ITestMsgQ {
 public:
-      TestMsgQ()
-              : mFmqSynchronized(nullptr), mFmqUnsynchronized(nullptr) {}
+    typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
+    typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
 
-      virtual ~TestMsgQ() {
-          delete mFmqSynchronized;
-          delete mFmqUnsynchronized;
-      }
+    TestMsgQ()
+            : mFmqSynchronized(nullptr), mFmqUnsynchronized(nullptr) {}
 
-      virtual Return<bool> requestWriteFmqSync(int count) {
-          vector<uint16_t> data(count);
-          for (int i = 0; i < count; i++) {
-              data[i] = i;
-          }
-          bool result = mFmqSynchronized->write(&data[0], count);
-          return result;
-      }
+    virtual ~TestMsgQ() {
+        delete mFmqSynchronized;
+        delete mFmqUnsynchronized;
+    }
 
-      virtual Return<bool> requestReadFmqSync(int count) {
-          vector<uint16_t> data(count);
-          bool result = mFmqSynchronized->read(&data[0], count)
-                  && verifyData(&data[0], count);
-          return result;
-      }
+    virtual Return<bool> requestWriteFmqSync(int count) {
+        vector<uint16_t> data(count);
+        for (int i = 0; i < count; i++) {
+            data[i] = i;
+        }
+        bool result = mFmqSynchronized->write(&data[0], count);
+        return result;
+    }
 
-      virtual Return<bool> requestWriteFmqUnsync(int count) {
-          vector<uint16_t> data(count);
-          for (int i = 0; i < count; i++) {
-              data[i] = i;
-          }
-          bool result = mFmqUnsynchronized->write(&data[0], count);
-          return result;
-      }
+    virtual Return<bool> requestReadFmqSync(int count) {
+        vector<uint16_t> data(count);
+        bool result = mFmqSynchronized->read(&data[0], count)
+                && verifyData(&data[0], count);
+        return result;
+    }
 
-      virtual Return<bool> requestReadFmqUnsync(int count) {
-          vector<uint16_t> data(count);
-          bool result =
-                  mFmqUnsynchronized->read(&data[0], count) && verifyData(&data[0], count);
-          return result;
-      }
+    virtual Return<bool> requestWriteFmqUnsync(int count) {
+        vector<uint16_t> data(count);
+        for (int i = 0; i < count; i++) {
+            data[i] = i;
+        }
+        bool result = mFmqUnsynchronized->write(&data[0], count);
+        return result;
+    }
 
-      virtual Return<void> requestBlockingRead(int count) {
-          vector<uint16_t> data(count);
-          bool result = mFmqSynchronized->readBlocking(
-                  &data[0],
-                  count,
-                  static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
-                  static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
-                  5000000000 /* timeOutNanos */);
+    virtual Return<bool> requestReadFmqUnsync(int count) {
+        vector<uint16_t> data(count);
+        bool result =
+                mFmqUnsynchronized->read(&data[0], count) && verifyData(&data[0], count);
+        return result;
+    }
 
-          if (result == false) {
-              ALOGE("Blocking read fails");
-          }
-          return Void();
-      }
+    virtual Return<void> requestBlockingRead(int count) {
+        vector<uint16_t> data(count);
+        bool result = mFmqSynchronized->readBlocking(
+                &data[0],
+                count,
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                5000000000 /* timeOutNanos */);
 
-      virtual Return<void> requestBlockingReadRepeat(int count, int numIter) {
-          vector<uint16_t> data(count);
-          for (int i = 0; i < numIter; i++) {
-              bool result = mFmqSynchronized->readBlocking(
-                      &data[0],
-                      count,
-                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
-                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
-                      5000000000 /* timeOutNanos */);
+        if (result == false) {
+            ALOGE("Blocking read fails");
+        }
+        return Void();
+    }
 
-              if (result == false) {
-                  ALOGE("Blocking read fails");
-                  break;
-              }
-          }
-          return Void();
-      }
+    virtual Return<void> requestBlockingReadRepeat(int count, int numIter) {
+        vector<uint16_t> data(count);
+        for (int i = 0; i < numIter; i++) {
+            bool result = mFmqSynchronized->readBlocking(
+                    &data[0],
+                    count,
+                    static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
+                    static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                    5000000000 /* timeOutNanos */);
+
+            if (result == false) {
+                ALOGE("Blocking read fails");
+                break;
+            }
+        }
+        return Void();
+    }
 
 
-      virtual Return<void> configureFmqSyncReadWrite(
-              ITestMsgQ::configureFmqSyncReadWrite_cb callback) {
-          static constexpr size_t kNumElementsInQueue = 1024;
-          mFmqSynchronized =
-                  new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(
-                          kNumElementsInQueue, true /* configureEventFlagWord */);
-          if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
-              callback(false /* ret */, MQDescriptorSync<uint16_t>());
-          } else {
-              /*
-               * Initialize the EventFlag word with bit FMQ_NOT_FULL.
-               */
-              auto evFlagWordPtr = mFmqSynchronized->getEventFlagWord();
-              if (evFlagWordPtr != nullptr) {
-                  std::atomic_init(evFlagWordPtr,
-                                   static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
-              }
-              callback(true /* ret */, *mFmqSynchronized->getDesc());
-          }
-          return Void();
-     }
+    virtual Return<void> configureFmqSyncReadWrite(
+            ITestMsgQ::configureFmqSyncReadWrite_cb callback) {
+        static constexpr size_t kNumElementsInQueue = 1024;
+        mFmqSynchronized =
+                new (std::nothrow) MessageQueueSync(
+                        kNumElementsInQueue, true /* configureEventFlagWord */);
+        if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
+            callback(false /* ret */, MessageQueueSync::Descriptor());
+        } else {
+            /*
+             * Initialize the EventFlag word with bit FMQ_NOT_FULL.
+             */
+            auto evFlagWordPtr = mFmqSynchronized->getEventFlagWord();
+            if (evFlagWordPtr != nullptr) {
+                std::atomic_init(evFlagWordPtr,
+                                 static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL));
+            }
+            callback(true /* ret */, *mFmqSynchronized->getDesc());
+        }
+        return Void();
+    }
 
-      virtual Return<void> configureFmqUnsyncWrite(
-              ITestMsgQ::configureFmqUnsyncWrite_cb callback) {
-          static constexpr size_t kNumElementsInQueue = 1024;
-          mFmqUnsynchronized =
-                  new (std::nothrow) MessageQueue<uint16_t, kUnsynchronizedWrite>(
-                          kNumElementsInQueue);
-          if ((mFmqUnsynchronized == nullptr) ||
-              (mFmqUnsynchronized->isValid() == false)) {
-              callback(false /* ret */, MQDescriptorUnsync<uint16_t>());
-          } else {
-              callback(true /* ret */, *mFmqUnsynchronized->getDesc());
-          }
-          return Void();
-      }
+    virtual Return<void> configureFmqUnsyncWrite(
+            ITestMsgQ::configureFmqUnsyncWrite_cb callback) {
+        static constexpr size_t kNumElementsInQueue = 1024;
+        mFmqUnsynchronized =
+                new (std::nothrow) MessageQueueUnsync(kNumElementsInQueue);
+        if ((mFmqUnsynchronized == nullptr) ||
+            (mFmqUnsynchronized->isValid() == false)) {
+            callback(false /* ret */, MessageQueueUnsync::Descriptor());
+        } else {
+            callback(true /* ret */, *mFmqUnsynchronized->getDesc());
+        }
+        return Void();
+    }
 
-      android::hardware::MessageQueue<uint16_t,
-              android::hardware::kSynchronizedReadWrite>* mFmqSynchronized;
-      android::hardware::MessageQueue<uint16_t,
-              android::hardware::kUnsynchronizedWrite>* mFmqUnsynchronized;
+    android::hardware::MessageQueue<uint16_t,
+            android::hardware::kSynchronizedReadWrite>* mFmqSynchronized;
+    android::hardware::MessageQueue<uint16_t,
+            android::hardware::kUnsynchronizedWrite>* mFmqUnsynchronized;
 
 private:
-      /*
-       * Utility function to verify data read from the fast message queue.
-       */
-      bool verifyData(uint16_t* data, int count) {
-          for (int i = 0; i < count; i++) {
-              if (data[i] != i) return false;
-          }
-          return true;
-      }
+    /*
+     * Utility function to verify data read from the fast message queue.
+     */
+    bool verifyData(uint16_t* data, int count) {
+        for (int i = 0; i < count; i++) {
+            if (data[i] != i) return false;
+        }
+        return true;
+    }
 };
 
 int Run() {
