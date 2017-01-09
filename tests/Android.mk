@@ -29,7 +29,7 @@ LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libutils \
     libfmq
-
+LOCAL_CFLAGS := -Wall -Werror
 LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0
 include $(BUILD_EXECUTABLE)
 
@@ -46,7 +46,7 @@ LOCAL_SHARED_LIBRARIES := \
     libbase \
     libfmq \
     liblog
-
+LOCAL_CFLAGS := -Wall -Werror
 LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
 LOCAL_MODULE := mq_test_client
 include $(BUILD_NATIVE_TEST)
@@ -62,5 +62,6 @@ LOCAL_SHARED_LIBRARIES := \
     libbase \
     libfmq
 LOCAL_MODULE := mq_test
+LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)
 
