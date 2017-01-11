@@ -154,7 +154,8 @@ status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, int64_t timeoutNan
      * The syscall will put the thread to sleep only
      * if the futex word still contains the expected
      * value i.e. efWord. If the futex word contents have
-     * changed, it fails with the error EAGAIN.
+     * changed, it fails with the error EAGAIN; If a timeout
+     * is specified and exceeded the syscall fails with ETIMEDOUT.
      */
     int ret = 0;
     if (timeoutNanoSeconds) {
@@ -168,7 +169,7 @@ status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, int64_t timeoutNan
     }
     if (ret == -1) {
         status = -errno;
-        if (status != -EAGAIN) {
+        if (status != -EAGAIN && status != -ETIMEDOUT) {
             ALOGE("Event flag wait was unsuccessful: %s\n", strerror(errno));
         }
         *efState = 0;
