@@ -94,6 +94,32 @@ protected:
     size_t mNumMessagesMax = 0;
 };
 
+class QueueSizeOdd : public ::testing::Test {
+ protected:
+  virtual void TearDown() {
+      delete mQueue;
+  }
+  virtual void SetUp() {
+      static constexpr size_t kNumElementsInQueue = 2049;
+      mQueue = new (std::nothrow) android::hardware::MessageQueue<
+              uint8_t, android::hardware::kSynchronizedReadWrite>(kNumElementsInQueue,
+                                                                  true /* configureEventFlagWord */);
+      ASSERT_NE(nullptr, mQueue);
+      ASSERT_TRUE(mQueue->isValid());
+      mNumMessagesMax = mQueue->getQuantumCount();
+      ASSERT_EQ(kNumElementsInQueue, mNumMessagesMax);
+      auto evFlagWordPtr = mQueue->getEventFlagWord();
+      ASSERT_NE(nullptr, evFlagWordPtr);
+      /*
+       * Initialize the EventFlag word to indicate Queue is not full.
+       */
+      std::atomic_init(evFlagWordPtr, static_cast<uint32_t>(kFmqNotFull));
+  }
+
+  android::hardware::MessageQueue<uint8_t, android::hardware::kSynchronizedReadWrite>* mQueue;
+  size_t mNumMessagesMax = 0;
+};
+
 /*
  * This thread will attempt to read and block. When wait returns
  * it checks if the kFmqNotEmpty bit is actually set.
@@ -245,6 +271,22 @@ TEST_F(BlockingReadWrites, BlockingTimeOutTest) {
 
     status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
     ASSERT_EQ(android::NO_ERROR, status);
+}
+
+/*
+ * Test that odd queue sizes do not cause unaligned error
+ * on access to EventFlag object.
+ */
+TEST_F(QueueSizeOdd, EventFlagTest) {
+    const size_t dataLen = 64;
+    uint8_t data[dataLen] = {0};
+
+    bool ret = mQueue->writeBlocking(data,
+                                     dataLen,
+                                     static_cast<uint32_t>(kFmqNotFull),
+                                     static_cast<uint32_t>(kFmqNotEmpty),
+                                     5000000000 /* timeOutNanos */);
+    ASSERT_TRUE(ret);
 }
 
 /*

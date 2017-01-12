@@ -31,7 +31,7 @@ namespace hardware {
 
 template <typename T, MQFlavor flavor>
 struct MessageQueue {
-    typedef MQDescriptor<T,flavor> Descriptor;
+    typedef MQDescriptor<T, flavor> Descriptor;
 
     /**
      * @param Desc MQDescriptor describing the FMQ.
@@ -332,11 +332,13 @@ MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue, bool configureE
     }
 
     /*
-     * Ashmem memory region size needs to
-     * be specified in page-aligned bytes.
+     * Ashmem memory region size needs to be specified in page-aligned bytes.
+     * kQueueSizeBytes needs to be aligned to word boundary so that all offsets
+     * in the grantorDescriptor will be word aligned.
      */
     size_t kAshmemSizePageAligned =
-            (kQueueSizeBytes + kMetaDataSize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+            (Descriptor::alignToWordBoundary(kQueueSizeBytes) + kMetaDataSize + PAGE_SIZE - 1) &
+            ~(PAGE_SIZE - 1);
 
     /*
      * Create an ashmem region to map the memory for the ringbuffer,
@@ -463,7 +465,7 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
          * notification.
          */
         status_t status = evFlag->wait(readNotification, &efState, timeOutNanos);
-        switch(status) {
+        switch (status) {
             case android::NO_ERROR:
                 /*
                  * If wait() returns NO_ERROR, break and check efState.
@@ -561,7 +563,7 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
          * notification.
          */
         status_t status = evFlag->wait(writeNotification, &efState, timeOutNanos);
-        switch(status) {
+        switch (status) {
             case android::NO_ERROR:
                 /*
                  * If wait() returns NO_ERROR, break and check efState.
