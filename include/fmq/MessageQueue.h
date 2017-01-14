@@ -149,10 +149,11 @@ struct MessageQueue {
      *
      * @return Whether the write was successful.
      */
-
     bool writeBlocking(const T* data, size_t count, uint32_t readNotification,
                        uint32_t writeNotification, int64_t timeOutNanos = 0,
                        android::hardware::EventFlag* evFlag = nullptr);
+
+    bool writeBlocking(const T* data, size_t count, int64_t timeOutNanos = 0);
 
     /**
      * Read some data from the FMQ without blocking.
@@ -200,6 +201,8 @@ struct MessageQueue {
                       uint32_t writeNotification, int64_t timeOutNanos = 0,
                       android::hardware::EventFlag* evFlag = nullptr);
 
+    bool readBlocking(T* data, size_t count, int64_t timeOutNanos = 0);
+
     /**
      * Get a pointer to the MQDescriptor object that describes this FMQ.
      *
@@ -243,6 +246,11 @@ private:
     void* mapGrantorDescr(uint32_t grantorIdx);
     void unmapGrantorDescr(void* address, uint32_t grantorIdx);
     void initMemory(bool resetPointers);
+
+    enum DefaultEventNotification : uint32_t {
+        FMQ_NOT_FULL  = 0x01,
+        FMQ_NOT_EMPTY = 0x02
+    };
 
     std::unique_ptr<Descriptor> mDesc;
     uint8_t* mRing = nullptr;
@@ -512,6 +520,13 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
 }
 
 template <typename T, MQFlavor flavor>
+bool MessageQueue<T, flavor>::writeBlocking(const T* data,
+                   size_t count,
+                   int64_t timeOutNanos) {
+    return writeBlocking(data, count, FMQ_NOT_FULL, FMQ_NOT_EMPTY, timeOutNanos);
+}
+
+template <typename T, MQFlavor flavor>
 bool MessageQueue<T, flavor>::readBlocking(T* data,
                                            size_t count,
                                            uint32_t readNotification,
@@ -607,6 +622,11 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
     }
 
     return result;
+}
+
+template <typename T, MQFlavor flavor>
+bool MessageQueue<T, flavor>::readBlocking(T* data, size_t count, int64_t timeOutNanos) {
+    return readBlocking(data, count, FMQ_NOT_FULL, FMQ_NOT_EMPTY, timeOutNanos);
 }
 
 template <typename T, MQFlavor flavor>
