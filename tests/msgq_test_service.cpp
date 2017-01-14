@@ -114,6 +114,19 @@ public:
         return Void();
     }
 
+    virtual Return<void> requestBlockingReadDefaultEventFlagBits(int count) {
+        vector<uint16_t> data(count);
+        bool result = mFmqSynchronized->readBlocking(
+                &data[0],
+                count,
+                5000000000 /* timeOutNanos */);
+
+        if (result == false) {
+            ALOGE("Blocking read fails");
+        }
+        return Void();
+    }
+
     virtual Return<void> requestBlockingReadRepeat(int count, int numIter) {
         vector<uint16_t> data(count);
         for (int i = 0; i < numIter; i++) {
