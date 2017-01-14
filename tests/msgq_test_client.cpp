@@ -116,7 +116,7 @@ bool verifyData(uint16_t* data, size_t count) {
  * Test that basic blocking works using readBlocking()/writeBlocking() APIs
  * using the EventFlag object owned by FMQ.
  */
-TEST_F(SynchronizedReadWriteClient, BlockingReadWrite) {
+TEST_F(SynchronizedReadWriteClient, BlockingReadWrite1) {
     const size_t dataLen = 64;
     uint16_t data[dataLen] = {0};
 
@@ -129,6 +129,27 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWrite) {
                                      dataLen,
                                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_FULL),
                                      static_cast<uint32_t>(ITestMsgQ::EventFlagBits::FMQ_NOT_EMPTY),
+                                     5000000000 /* timeOutNanos */);
+    ASSERT_TRUE(ret);
+}
+
+/*
+ * Test that basic blocking works using readBlocking()/writeBlocking() APIs
+ * using the EventFlag object owned by FMQ and using the default EventFlag
+ * notification bit mask.
+ */
+TEST_F(SynchronizedReadWriteClient, BlockingReadWrite2) {
+    const size_t dataLen = 64;
+    uint16_t data[dataLen] = {0};
+
+    /*
+     * Request service to perform a blocking read using default EventFlag
+     * notification bit mask. This call is oneway and will
+     * return immediately.
+     */
+    mService->requestBlockingReadDefaultEventFlagBits(dataLen);
+    bool ret = mQueue->writeBlocking(data,
+                                     dataLen,
                                      5000000000 /* timeOutNanos */);
     ASSERT_TRUE(ret);
 }
