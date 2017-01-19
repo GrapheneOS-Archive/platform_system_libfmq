@@ -25,6 +25,7 @@
 #include <new>
 #include <sys/mman.h>
 #include <utils/Log.h>
+#include <utils/SystemClock.h>
 
 namespace android {
 namespace hardware {
@@ -759,13 +760,35 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
         return result;
     }
 
+    bool shouldTimeOut = timeOutNanos != 0;
+    int64_t prevTimeNs = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
+
     bool endWait = false;
     while (endWait == false) {
-        uint32_t efState = 0;
+        /* It is not require to adjust 'timeOutNanos' if 'shouldTimeOut' is true */
+        if (shouldTimeOut) {
+            int64_t currentTimeNs = android::elapsedRealtimeNano();
+            /*
+             * Decrement TimeOutNanos to account for the time taken to complete the last
+             * iteration of the while loop.
+             */
+            timeOutNanos -= currentTimeNs - prevTimeNs;
+            prevTimeNs = currentTimeNs;
+            if (timeOutNanos <= 0) {
+                /*
+                 * Attempt write in case a context switch happened outside of
+                 * evFlag->wait().
+                 */
+                result = write(data, count);
+                break;
+            }
+        }
+
         /*
          * wait() will return immediately if there was a pending read
          * notification.
          */
+        uint32_t efState = 0;
         status_t status = evFlag->wait(readNotification, &efState, timeOutNanos);
         switch (status) {
             case android::NO_ERROR:
@@ -802,12 +825,13 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
          * keep waiting for another readNotification.
          */
         if ((efState & readNotification) && write(data, count)) {
-            if (writeNotification) {
-                evFlag->wake(writeNotification);
-            }
             result = true;
             endWait = true;
         }
+    }
+
+    if (result && writeNotification != 0) {
+        evFlag->wake(writeNotification);
     }
 
     return result;
@@ -864,13 +888,36 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
         return result;
     }
 
+    bool shouldTimeOut = timeOutNanos != 0;
+    int64_t prevTimeNs = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
+
     bool endWait = false;
     while (endWait == false) {
-        uint32_t efState = 0;
+        /* It is not require to adjust 'timeOutNanos' if 'shouldTimeOut' is true */
+        if (shouldTimeOut) {
+            int64_t currentTimeNs = android::elapsedRealtimeNano();
+            /*
+             * Decrement TimeOutNanos to account for the time taken to complete the last
+             * iteration of the while loop.
+             */
+            timeOutNanos -= currentTimeNs - prevTimeNs;
+            prevTimeNs = currentTimeNs;
+
+            if (timeOutNanos <= 0) {
+                /*
+                 * Attempt read in case a context switch happened outside of
+                 * evFlag->wait().
+                 */
+                result = read(data, count);
+                break;
+            }
+        }
+
         /*
          * wait() will return immediately if there was a pending write
          * notification.
          */
+        uint32_t efState = 0;
         status_t status = evFlag->wait(writeNotification, &efState, timeOutNanos);
         switch (status) {
             case android::NO_ERROR:
@@ -907,14 +954,14 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
          * for another write notification.
          */
         if ((efState & writeNotification) && read(data, count)) {
-            if (readNotification) {
-                evFlag->wake(readNotification);
-            }
             result = true;
             endWait = true;
         }
     }
 
+    if (result && readNotification != 0) {
+        evFlag->wake(readNotification);
+    }
     return result;
 }
 
