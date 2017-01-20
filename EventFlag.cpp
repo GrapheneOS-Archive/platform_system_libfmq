@@ -112,8 +112,8 @@ status_t EventFlag::wake(uint32_t bitmask) {
     status_t status = NO_ERROR;
     uint32_t old = std::atomic_fetch_or(mEfWordPtr, bitmask);
     /*
-     * No need to call FUTEX_WAKE_BITSET if there is a deferred wake
-     * already available for any bit in the bitmask.
+     * No need to call FUTEX_WAKE_BITSET if there were deferred wakes
+     * already available for all set bits from bitmask.
      */
     if ((~old & bitmask) != 0) {
         int ret = syscall(__NR_futex, mEfWordPtr, FUTEX_WAKE_BITSET,
