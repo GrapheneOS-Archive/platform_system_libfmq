@@ -14,7 +14,6 @@
 * limitations under the License.
 */
 
-#include <hidl/ServiceManagement.h>
 #include <hidl/HidlTransportSupport.h>
 #include <utils/Looper.h>
 #include <utils/StrongPointer.h>
