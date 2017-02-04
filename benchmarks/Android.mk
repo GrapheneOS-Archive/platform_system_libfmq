@@ -31,6 +31,11 @@ LOCAL_SHARED_LIBRARIES := \
     libhidltransport
 
 LOCAL_SHARED_LIBRARIES += android.hardware.benchmarks.msgq@1.0 libfmq
+
+LOCAL_MULTILIB := both
+LOCAL_MODULE_STEM_32 := $(LOCAL_MODULE)32
+LOCAL_MODULE_STEM_64 := $(LOCAL_MODULE)64
+
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
