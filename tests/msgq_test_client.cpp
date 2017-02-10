@@ -50,6 +50,9 @@ const char kServiceName[] = "android.hardware.tests.msgq@1.0::ITestMsgQ";
 }  // namespace hardware
 }  // namespace android
 
+typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
+typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
+
 class SynchronizedReadWriteClient : public ::testing::Test {
 protected:
     virtual void TearDown() {
@@ -64,7 +67,7 @@ protected:
         mService->configureFmqSyncReadWrite([this](
                 bool ret, const MQDescriptorSync<uint16_t>& in) {
             ASSERT_TRUE(ret);
-            mQueue = new (std::nothrow) MessageQueue<uint16_t, kSynchronizedReadWrite>(in);
+            mQueue = new (std::nothrow) MessageQueueSync(in);
         });
         ASSERT_NE(nullptr, mQueue);
         ASSERT_TRUE(mQueue->isValid());
@@ -72,7 +75,7 @@ protected:
     }
 
     sp<ITestMsgQ> mService;
-    MessageQueue<uint16_t, kSynchronizedReadWrite>* mQueue = nullptr;
+    MessageQueueSync* mQueue = nullptr;
     size_t mNumMessagesMax = 0;
 };
 
@@ -90,7 +93,7 @@ protected:
       mService->configureFmqUnsyncWrite(
               [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
                   ASSERT_TRUE(ret);
-                  mQueue = new (std::nothrow) MessageQueue<uint16_t, kUnsynchronizedWrite>(in);
+                  mQueue = new (std::nothrow) MessageQueueUnsync(in);
               });
       ASSERT_NE(nullptr, mQueue);
       ASSERT_TRUE(mQueue->isValid());
@@ -98,7 +101,7 @@ protected:
   }
 
   sp<ITestMsgQ> mService;
-  MessageQueue<uint16_t, kUnsynchronizedWrite>* mQueue = nullptr;
+  MessageQueueUnsync*  mQueue = nullptr;
   size_t mNumMessagesMax = 0;
 };
 
@@ -110,6 +113,15 @@ bool verifyData(uint16_t* data, size_t count) {
         if (data[i] != i) return false;
     }
     return true;
+}
+
+/*
+ * Utility function to initialize data to be written to the FMQ
+ */
+inline void initData(uint16_t* data, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        data[i] = i;
+    }
 }
 
 /*
@@ -264,7 +276,8 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWriteZeroMessages) {
     ASSERT_TRUE(ret);
 }
 
-/* Request mService to write a small number of messages
+/*
+ * Request mService to write a small number of messages
  * to the FMQ. Read and verify data.
  */
 TEST_F(SynchronizedReadWriteClient, SmallInputReaderTest1) {
@@ -278,6 +291,37 @@ TEST_F(SynchronizedReadWriteClient, SmallInputReaderTest1) {
 }
 
 /*
+ * Request mService to write a small number of messages
+ * to the FMQ. Read and verify each message using
+ * beginRead/Commit read APIs.
+ */
+TEST_F(SynchronizedReadWriteClient, SmallInputReaderTest2) {
+    const size_t dataLen = 16;
+    ASSERT_LE(dataLen, mNumMessagesMax);
+    auto ret = mService->requestWriteFmqSync(dataLen);
+
+    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret);
+
+    MessageQueueSync::MemTransaction tx;
+    ASSERT_TRUE(mQueue->beginRead(dataLen, &tx));
+
+    auto first = tx.getFirstRegion();
+    auto second = tx.getSecondRegion();
+    size_t firstRegionLength = first.getLength();
+
+    for (size_t i = 0; i < dataLen; i++) {
+        if (i < firstRegionLength) {
+            ASSERT_EQ(i, *(first.getAddress() + i));
+        } else {
+            ASSERT_EQ(i, *(second.getAddress() + i - firstRegionLength));
+        }
+    }
+
+    ASSERT_TRUE(mQueue->commitRead(dataLen));
+}
+
+/*
  * Write a small number of messages to FMQ. Request
  * mService to read and verify that the write was succesful.
  */
@@ -286,11 +330,47 @@ TEST_F(SynchronizedReadWriteClient, SmallInputWriterTest1) {
     ASSERT_LE(dataLen, mNumMessagesMax);
     size_t originalCount = mQueue->availableToWrite();
     uint16_t data[dataLen];
-    for (size_t i = 0; i < dataLen; i++) {
-        data[i] = i;
-    }
+    initData(data, dataLen);
     ASSERT_TRUE(mQueue->write(data, dataLen));
     bool ret = mService->requestReadFmqSync(dataLen);
+    ASSERT_TRUE(ret);
+    size_t availableCount = mQueue->availableToWrite();
+    ASSERT_EQ(originalCount, availableCount);
+}
+
+/*
+ * Write a small number of messages to FMQ using the beginWrite()/CommitWrite()
+ * APIs. Request mService to read and verify that the write was succesful.
+ */
+TEST_F(SynchronizedReadWriteClient, SmallInputWriterTest2) {
+    const size_t dataLen = 16;
+    ASSERT_LE(dataLen, mNumMessagesMax);
+    size_t originalCount = mQueue->availableToWrite();
+    uint16_t data[dataLen];
+    initData(data, dataLen);
+
+    MessageQueueSync::MemTransaction tx;
+    ASSERT_TRUE(mQueue->beginWrite(dataLen, &tx));
+
+    auto first = tx.getFirstRegion();
+    auto second = tx.getSecondRegion();
+
+    size_t firstRegionLength = first.getLength();
+    uint16_t* firstBaseAddress = first.getAddress();
+    uint16_t* secondBaseAddress = second.getAddress();
+
+    for (size_t i = 0; i < dataLen; i++) {
+        if (i < firstRegionLength) {
+            *(firstBaseAddress + i) = i;
+        } else {
+            *(secondBaseAddress + i - firstRegionLength) = i;
+        }
+    }
+
+    ASSERT_TRUE(mQueue->commitWrite(dataLen));
+
+    auto ret = mService->requestReadFmqSync(dataLen);
+    ASSERT_TRUE(ret.isOk());
     ASSERT_TRUE(ret);
     size_t availableCount = mQueue->availableToWrite();
     ASSERT_EQ(originalCount, availableCount);
@@ -318,9 +398,7 @@ TEST_F(SynchronizedReadWriteClient, ReadWhenEmpty) {
 
 TEST_F(SynchronizedReadWriteClient, WriteWhenFull) {
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], mNumMessagesMax));
     ASSERT_EQ(0UL, mQueue->availableToWrite());
     ASSERT_FALSE(mQueue->write(&data[0], 1));
@@ -367,10 +445,7 @@ TEST_F(SynchronizedReadWriteClient, LargeInputTest2) {
 
 TEST_F(SynchronizedReadWriteClient, LargeInputTest3) {
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
-
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], mNumMessagesMax));
     ASSERT_EQ(0UL, mQueue->availableToWrite());
     ASSERT_FALSE(mQueue->write(&data[0], 1));
@@ -410,9 +485,8 @@ TEST_F(SynchronizedReadWriteClient, MultipleWrite) {
     const size_t numMessages = chunkSize * chunkNum;
     ASSERT_LE(numMessages, mNumMessagesMax);
     uint16_t data[numMessages];
-    for (size_t i = 0; i < numMessages; i++) {
-        data[i] = i;
-    }
+    initData(&data[0], numMessages);
+
     for (size_t i = 0; i < chunkNum; i++) {
         ASSERT_TRUE(mQueue->write(data + i * chunkSize, chunkSize));
     }
@@ -429,9 +503,7 @@ TEST_F(SynchronizedReadWriteClient, MultipleWrite) {
 TEST_F(SynchronizedReadWriteClient, ReadWriteWrapAround) {
     size_t numMessages = mNumMessagesMax / 2;
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], numMessages));
     bool ret = mService->requestReadFmqSync(numMessages);
     ASSERT_TRUE(ret);
@@ -440,7 +512,47 @@ TEST_F(SynchronizedReadWriteClient, ReadWriteWrapAround) {
     ASSERT_TRUE(ret);
 }
 
-/* Request mService to write a small number of messages
+/*
+ * Use beginWrite/commitWrite/getSlot APIs to test wrap arounds are handled
+ * correctly.
+ * Write enough messages into the FMQ to fill half of it
+ * and read back the same.
+ * Write mNumMessagesMax messages into the queue. This will cause a
+ * wrap around. Read and verify the data.
+ */
+TEST_F(SynchronizedReadWriteClient, ReadWriteWrapAround2) {
+    size_t numMessages = mNumMessagesMax / 2;
+    std::vector<uint16_t> data(mNumMessagesMax);
+    initData(&data[0], mNumMessagesMax);
+    ASSERT_TRUE(mQueue->write(&data[0], numMessages));
+    auto ret = mService->requestReadFmqSync(numMessages);
+
+    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret);
+
+    /*
+     * The next write and read will have to deal with with wrap arounds.
+     */
+    MessageQueueSync::MemTransaction tx;
+    ASSERT_TRUE(mQueue->beginWrite(mNumMessagesMax, &tx));
+
+    ASSERT_EQ(tx.getFirstRegion().getLength() + tx.getSecondRegion().getLength(),  mNumMessagesMax);
+
+    for (size_t i = 0; i < mNumMessagesMax; i++) {
+        uint16_t* ptr = tx.getSlot(i);
+        *ptr = data[i];
+    }
+
+    ASSERT_TRUE(mQueue->commitWrite(mNumMessagesMax));
+
+    ret = mService->requestReadFmqSync(mNumMessagesMax);
+
+    ASSERT_TRUE(ret.isOk());
+    ASSERT_TRUE(ret);
+}
+
+/*
+ * Request mService to write a small number of messages
  * to the FMQ. Read and verify data.
  */
 TEST_F(UnsynchronizedWriteClient, SmallInputReaderTest1) {
@@ -460,11 +572,8 @@ TEST_F(UnsynchronizedWriteClient, SmallInputReaderTest1) {
 TEST_F(UnsynchronizedWriteClient, SmallInputWriterTest1) {
     const size_t dataLen = 16;
     ASSERT_LE(dataLen, mNumMessagesMax);
-    size_t originalCount = mQueue->availableToWrite();
     uint16_t data[dataLen];
-    for (size_t i = 0; i < dataLen; i++) {
-        data[i] = i;
-    }
+    initData(data, dataLen);
     ASSERT_TRUE(mQueue->write(data, dataLen));
     bool ret = mService->requestReadFmqUnsync(dataLen);
     ASSERT_TRUE(ret);
@@ -492,9 +601,7 @@ TEST_F(UnsynchronizedWriteClient, ReadWhenEmpty) {
 
 TEST_F(UnsynchronizedWriteClient, WriteWhenFull) {
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], mNumMessagesMax));
     ASSERT_EQ(0UL, mQueue->availableToWrite());
     ASSERT_TRUE(mQueue->write(&data[0], 1));
@@ -541,10 +648,7 @@ TEST_F(UnsynchronizedWriteClient, LargeInputTest2) {
  */
 TEST_F(UnsynchronizedWriteClient, LargeInputTest3) {
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
-
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], mNumMessagesMax));
     ASSERT_EQ(0UL, mQueue->availableToWrite());
     ASSERT_TRUE(mQueue->write(&data[0], 1));
@@ -588,9 +692,7 @@ TEST_F(UnsynchronizedWriteClient, MultipleWrite) {
     const size_t numMessages = chunkSize * chunkNum;
     ASSERT_LE(numMessages, mNumMessagesMax);
     uint16_t data[numMessages];
-    for (size_t i = 0; i < numMessages; i++) {
-        data[i] = i;
-    }
+    initData(data, numMessages);
     for (size_t i = 0; i < chunkNum; i++) {
         ASSERT_TRUE(mQueue->write(data + i * chunkSize, chunkSize));
     }
@@ -607,9 +709,7 @@ TEST_F(UnsynchronizedWriteClient, MultipleWrite) {
 TEST_F(UnsynchronizedWriteClient, ReadWriteWrapAround) {
     size_t numMessages = mNumMessagesMax / 2;
     std::vector<uint16_t> data(mNumMessagesMax);
-    for (size_t i = 0; i < mNumMessagesMax; i++) {
-        data[i] = i;
-    }
+    initData(&data[0], mNumMessagesMax);
     ASSERT_TRUE(mQueue->write(&data[0], numMessages));
     bool ret = mService->requestReadFmqUnsync(numMessages);
     ASSERT_TRUE(ret);
