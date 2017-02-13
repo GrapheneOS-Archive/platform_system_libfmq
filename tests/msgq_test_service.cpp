@@ -118,12 +118,12 @@ public:
         vector<uint16_t> data(count);
         bool result = mFmqSynchronized->readBlocking(
                 &data[0],
-                count,
-                5000000000 /* timeOutNanos */);
+                count);
 
         if (result == false) {
             ALOGE("Blocking read fails");
         }
+
         return Void();
     }
 
