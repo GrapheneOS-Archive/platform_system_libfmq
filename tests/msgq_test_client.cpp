@@ -160,9 +160,19 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWrite2) {
      * return immediately.
      */
     mService->requestBlockingReadDefaultEventFlagBits(dataLen);
+
+    /* Cause a context switch to allow service to block */
+    sched_yield();
+
     bool ret = mQueue->writeBlocking(data,
-                                     dataLen,
-                                     5000000000 /* timeOutNanos */);
+                                     dataLen);
+    ASSERT_TRUE(ret);
+
+    /*
+     * If the blocking read was successful, another write of size
+     * mNumMessagesMax will succeed.
+     */
+    ret = mQueue->writeBlocking(data, mNumMessagesMax, 5000000000 /* timeOutNanos */);
     ASSERT_TRUE(ret);
 }
 
@@ -183,7 +193,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat1) {
     const size_t writeCount = 1024;
     mService->requestBlockingReadRepeat(dataLen, writeCount);
 
-    for(size_t i = 0; i < writeCount; i++) {
+    for (size_t i = 0; i < writeCount; i++) {
         bool ret = mQueue->writeBlocking(
                 data,
                 dataLen,
@@ -211,7 +221,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat2) {
     const size_t writeCount = 1024;
     mService->requestBlockingReadRepeat(dataLen*2, writeCount/2);
 
-    for(size_t i = 0; i < writeCount; i++) {
+    for (size_t i = 0; i < writeCount; i++) {
         bool ret = mQueue->writeBlocking(
                 data,
                 dataLen,
@@ -238,7 +248,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWriteRepeat3) {
     size_t writeCount = 1024;
     mService->requestBlockingReadRepeat(dataLen/2, writeCount*2);
 
-    for(size_t i = 0; i < writeCount; i++) {
+    for (size_t i = 0; i < writeCount; i++) {
         bool ret = mQueue->writeBlocking(
                 data,
                 dataLen,
