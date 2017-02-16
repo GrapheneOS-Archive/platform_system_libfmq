@@ -62,11 +62,6 @@ public:
     TestMsgQ()
             : mFmqSynchronized(nullptr), mFmqUnsynchronized(nullptr) {}
 
-    virtual ~TestMsgQ() {
-        delete mFmqSynchronized;
-        delete mFmqUnsynchronized;
-    }
-
     virtual Return<bool> requestWriteFmqSync(int count) {
         vector<uint16_t> data(count);
         for (int i = 0; i < count; i++) {
@@ -149,9 +144,8 @@ public:
     virtual Return<void> configureFmqSyncReadWrite(
             ITestMsgQ::configureFmqSyncReadWrite_cb callback) {
         static constexpr size_t kNumElementsInQueue = 1024;
-        mFmqSynchronized =
-                new (std::nothrow) MessageQueueSync(
-                        kNumElementsInQueue, true /* configureEventFlagWord */);
+        mFmqSynchronized.reset(new (std::nothrow) MessageQueueSync(
+                kNumElementsInQueue, true /* configureEventFlagWord */));
         if ((mFmqSynchronized == nullptr) || (mFmqSynchronized->isValid() == false)) {
             callback(false /* ret */, MessageQueueSync::Descriptor());
         } else {
@@ -168,11 +162,12 @@ public:
         return Void();
     }
 
-    virtual Return<void> configureFmqUnsyncWrite(
-            ITestMsgQ::configureFmqUnsyncWrite_cb callback) {
-        static constexpr size_t kNumElementsInQueue = 1024;
-        mFmqUnsynchronized =
-                new (std::nothrow) MessageQueueUnsync(kNumElementsInQueue);
+    virtual Return<void> getFmqUnsyncWrite(bool configureFmq,
+                                           ITestMsgQ::getFmqUnsyncWrite_cb callback) {
+        if (configureFmq) {
+            static constexpr size_t kNumElementsInQueue = 1024;
+            mFmqUnsynchronized.reset(new (std::nothrow) MessageQueueUnsync(kNumElementsInQueue));
+        }
         if ((mFmqUnsynchronized == nullptr) ||
             (mFmqUnsynchronized->isValid() == false)) {
             callback(false /* ret */, MessageQueueUnsync::Descriptor());
@@ -182,10 +177,8 @@ public:
         return Void();
     }
 
-    android::hardware::MessageQueue<uint16_t,
-            android::hardware::kSynchronizedReadWrite>* mFmqSynchronized;
-    android::hardware::MessageQueue<uint16_t,
-            android::hardware::kUnsynchronizedWrite>* mFmqUnsynchronized;
+    std::unique_ptr<MessageQueueSync> mFmqSynchronized;
+    std::unique_ptr<MessageQueueUnsync> mFmqUnsynchronized;
 
 private:
     /*
