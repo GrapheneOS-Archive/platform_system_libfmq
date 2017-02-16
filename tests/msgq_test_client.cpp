@@ -53,6 +53,23 @@ const char kServiceName[] = "android.hardware.tests.msgq@1.0::ITestMsgQ";
 typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
 typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
 
+class UnsynchronizedWriteClientMultiProcess : public ::testing::Test {
+protected:
+    void getQueue(MessageQueueUnsync** fmq, sp<ITestMsgQ>& service, bool setupQueue) {
+        namespace clientTests = android::hardware::tests::client;
+
+        service = ITestMsgQ::getService(clientTests::kServiceName);
+        ASSERT_NE(service, nullptr);
+        service->getFmqUnsyncWrite(setupQueue,
+                                   [fmq](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
+                                       ASSERT_TRUE(ret);
+                                       *fmq = new (std::nothrow) MessageQueueUnsync(in);
+                                   });
+        ASSERT_NE(*fmq, nullptr);
+        ASSERT_TRUE((*fmq)->isValid());
+    }
+};
+
 class SynchronizedReadWriteClient : public ::testing::Test {
 protected:
     virtual void TearDown() {
@@ -90,11 +107,11 @@ protected:
 
       mService = ITestMsgQ::getService(clientTests::kServiceName);
       ASSERT_NE(mService, nullptr);
-      mService->configureFmqUnsyncWrite(
-              [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
-                  ASSERT_TRUE(ret);
-                  mQueue = new (std::nothrow) MessageQueueUnsync(in);
-              });
+      mService->getFmqUnsyncWrite(true /* configureFmq */,
+                                  [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
+                                      ASSERT_TRUE(ret);
+                                      mQueue = new (std::nothrow) MessageQueueUnsync(in);
+                                  });
       ASSERT_NE(nullptr, mQueue);
       ASSERT_TRUE(mQueue->isValid());
       mNumMessagesMax = mQueue->getQuantumCount();
@@ -122,6 +139,89 @@ inline void initData(uint16_t* data, size_t count) {
     for (size_t i = 0; i < count; i++) {
         data[i] = i;
     }
+}
+
+/*
+ * Verify that for an unsynchronized flavor of FMQ, multiple readers
+ * can recover from a write overflow condition.
+ */
+TEST_F(UnsynchronizedWriteClientMultiProcess, MultipleReadersAfterOverflow) {
+    const size_t dataLen = 16;
+
+    pid_t pid;
+    /* creating first reader process */
+    if ((pid = fork()) == 0) {
+        sp<ITestMsgQ> testService;
+        MessageQueueUnsync*  queue = nullptr;
+        getQueue(&queue, testService, true /* setupQueue */);
+
+        size_t numMessagesMax = queue->getQuantumCount();
+
+        // The following two writes will cause a write overflow.
+        auto ret = testService->requestWriteFmqUnsync(numMessagesMax);
+        ASSERT_TRUE(ret.isOk());
+        ASSERT_TRUE(ret);
+
+        ret = testService->requestWriteFmqUnsync(1);
+        ASSERT_TRUE(ret.isOk());
+        ASSERT_TRUE(ret);
+
+        // The following read should fail due to the overflow.
+        std::vector<uint16_t> readData(numMessagesMax);
+        ASSERT_FALSE(queue->read(&readData[0], numMessagesMax));
+
+        /*
+         * Request another write to verify that the reader can recover from the
+         * overflow condition.
+         */
+        ASSERT_LT(dataLen, numMessagesMax);
+        ret = testService->requestWriteFmqUnsync(dataLen);
+        ASSERT_TRUE(ret.isOk());
+        ASSERT_TRUE(ret);
+
+        // Verify that the read is successful.
+        ASSERT_TRUE(queue->read(&readData[0], dataLen));
+        ASSERT_TRUE(verifyData(&readData[0], dataLen));
+
+        delete queue;
+        exit(0);
+    }
+
+    ASSERT_GT(pid, 0 /* parent should see PID greater than 0 for a good fork */);
+
+    int status;
+    // wait for the first reader process to exit.
+    ASSERT_EQ(pid, waitpid(pid, &status, 0 /* options */));
+
+    // creating second reader process.
+    if ((pid = fork()) == 0) {
+        sp<ITestMsgQ> testService;
+        MessageQueueUnsync* queue = nullptr;
+
+        getQueue(&queue, testService, false /* setupQueue */);
+
+        // This read should fail due to the write overflow.
+        std::vector<uint16_t> readData(dataLen);
+        ASSERT_FALSE(queue->read(&readData[0], dataLen));
+
+        /*
+         * Request another write to verify that the process that recover from
+         * the overflow condition.
+         */
+        auto ret = testService->requestWriteFmqUnsync(dataLen);
+        ASSERT_TRUE(ret.isOk());
+        ASSERT_TRUE(ret);
+
+        // verify that the read is successful.
+        ASSERT_TRUE(queue->read(&readData[0], dataLen));
+        ASSERT_TRUE(verifyData(&readData[0], dataLen));
+
+        delete queue;
+        exit(0);
+    }
+
+    ASSERT_GT(pid, 0 /* parent should see PID greater than 0 for a good fork */);
+    ASSERT_EQ(pid, waitpid(pid, &status, 0 /* options */));
 }
 
 /*
@@ -764,9 +864,9 @@ TEST_F(UnsynchronizedWriteClient, SmallInputMultipleReaderTest) {
 /*
  * Request mService to write into the FMQ until it is full.
  * Request mService to do another write and verify it is successful.
- * Use two reader threads to read and verify that both fail.
+ * Use two reader processes to read and verify that both fail.
  */
-TEST_F(UnsynchronizedWriteClient, MultipleReadersAfterOverflow1) {
+TEST_F(UnsynchronizedWriteClient, OverflowNotificationTest) {
     auto desc = mQueue->getDesc();
     std::unique_ptr<MessageQueue<uint16_t, kUnsynchronizedWrite>> mQueue2(
             new (std::nothrow) MessageQueue<uint16_t, kUnsynchronizedWrite>(*desc));
@@ -787,54 +887,5 @@ TEST_F(UnsynchronizedWriteClient, MultipleReadersAfterOverflow1) {
         ASSERT_GT(pid, 0/* parent should see PID greater than 0 for a good fork */);
         std::vector<uint16_t> readData(mNumMessagesMax);
         ASSERT_FALSE(mQueue->read(&readData[0], mNumMessagesMax));
-    }
-}
-
-/*
- * Request mService to write into the FMQ until it is full.
- * Request mService to do another write and verify it is successful.
- * Use two reader threads to read and verify that both fail.
- * Request mService to write more data into the Queue and verify that both
- * readers are able to recover from the overflow and read successfully.
- */
-TEST_F(UnsynchronizedWriteClient, MultipleReadersAfterOverflow2) {
-    auto desc = mQueue->getDesc();
-    std::unique_ptr<MessageQueue<uint16_t, kUnsynchronizedWrite>> mQueue2(
-            new (std::nothrow) MessageQueue<uint16_t, kUnsynchronizedWrite>(*desc));
-    ASSERT_NE(nullptr, mQueue2.get());
-
-    bool ret = mService->requestWriteFmqUnsync(mNumMessagesMax);
-    ASSERT_TRUE(ret);
-    ret = mService->requestWriteFmqUnsync(1);
-    ASSERT_TRUE(ret);
-
-    const size_t dataLen = 16;
-    ASSERT_LT(dataLen, mNumMessagesMax);
-
-    pid_t pid;
-    if ((pid = fork()) == 0) {
-        /* child process */
-        std::vector<uint16_t> readData(mNumMessagesMax);
-        ASSERT_FALSE(mQueue2->read(&readData[0], mNumMessagesMax));
-        ret = mService->requestWriteFmqUnsync(dataLen);
-        ASSERT_TRUE(ret);
-        ASSERT_TRUE(mQueue2->read(&readData[0], dataLen));
-        ASSERT_TRUE(verifyData(&readData[0], dataLen));
-        exit(0);
-    } else {
-        ASSERT_GT(pid, 0/* parent should see PID greater than 0 for a good fork */);
-
-        std::vector<uint16_t> readData(mNumMessagesMax);
-        ASSERT_FALSE(mQueue->read(&readData[0], mNumMessagesMax));
-
-        int status;
-        /*
-         * Wait for child process to return before proceeding since the final write
-         * is requested by the child.
-         */
-        ASSERT_EQ(pid, waitpid(pid, &status, 0 /* options */));
-
-        ASSERT_TRUE(mQueue->read(&readData[0], dataLen));
-        ASSERT_TRUE(verifyData(&readData[0], dataLen));
     }
 }
