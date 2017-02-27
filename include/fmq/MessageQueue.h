@@ -1170,41 +1170,41 @@ bool MessageQueue<T, flavor>::isValid() const {
 
 template <typename T, MQFlavor flavor>
 void* MessageQueue<T, flavor>::mapGrantorDescr(uint32_t grantorIdx) {
-    const native_handle_t* handle = mDesc->getNativeHandle()->handle();
-    auto mGrantors = mDesc->getGrantors();
-    if ((handle == nullptr) || (grantorIdx >= mGrantors.size())) {
+    const native_handle_t* handle = mDesc->handle();
+    auto grantors = mDesc->grantors();
+    if ((handle == nullptr) || (grantorIdx >= grantors.size())) {
         return nullptr;
     }
 
-    int fdIndex = mGrantors[grantorIdx].fdIndex;
+    int fdIndex = grantors[grantorIdx].fdIndex;
     /*
      * Offset for mmap must be a multiple of PAGE_SIZE.
      */
-    int mapOffset = (mGrantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
+    int mapOffset = (grantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
     int mapLength =
-            mGrantors[grantorIdx].offset - mapOffset + mGrantors[grantorIdx].extent;
+            grantors[grantorIdx].offset - mapOffset + grantors[grantorIdx].extent;
 
     void* address = mmap(0, mapLength, PROT_READ | PROT_WRITE, MAP_SHARED,
                          handle->data[fdIndex], mapOffset);
     return (address == MAP_FAILED)
             ? nullptr
             : reinterpret_cast<uint8_t*>(address) +
-            (mGrantors[grantorIdx].offset - mapOffset);
+            (grantors[grantorIdx].offset - mapOffset);
 }
 
 template <typename T, MQFlavor flavor>
 void MessageQueue<T, flavor>::unmapGrantorDescr(void* address,
                                                 uint32_t grantorIdx) {
-    auto mGrantors = mDesc->getGrantors();
-    if ((address == nullptr) || (grantorIdx >= mGrantors.size())) {
+    auto grantors = mDesc->grantors();
+    if ((address == nullptr) || (grantorIdx >= grantors.size())) {
         return;
     }
 
-    int mapOffset = (mGrantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
+    int mapOffset = (grantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
     int mapLength =
-            mGrantors[grantorIdx].offset - mapOffset + mGrantors[grantorIdx].extent;
+            grantors[grantorIdx].offset - mapOffset + grantors[grantorIdx].extent;
     void* baseAddress = reinterpret_cast<uint8_t*>(address) -
-            (mGrantors[grantorIdx].offset - mapOffset);
+            (grantors[grantorIdx].offset - mapOffset);
     if (baseAddress) munmap(baseAddress, mapLength);
 }
 
