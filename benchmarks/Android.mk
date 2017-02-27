@@ -30,7 +30,7 @@ LOCAL_SHARED_LIBRARIES := \
     libhidlbase \
     libhidltransport
 
-LOCAL_SHARED_LIBRARIES += android.hardware.benchmarks.msgq@1.0 libfmq
+LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
 
 LOCAL_MULTILIB := both
 LOCAL_MODULE_STEM_32 := $(LOCAL_MODULE)32
@@ -50,7 +50,7 @@ LOCAL_SHARED_LIBRARIES := \
     libhidlbase \
     libhidltransport
 
-LOCAL_SHARED_LIBRARIES += android.hardware.benchmarks.msgq@1.0 libfmq
+LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
 LOCAL_MODULE := mq_benchmark_client
 include $(BUILD_NATIVE_TEST)
 
