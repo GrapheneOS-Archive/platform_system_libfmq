@@ -21,7 +21,7 @@
 #include <thread>
 
 #include <fmq/MessageQueue.h>
-#include <android/hardware/benchmarks/msgq/1.0/IBenchmarkMsgQ.h>
+#include <android/hardware/tests/msgq/1.0/IBenchmarkMsgQ.h>
 
 // libutils:
 using android::Looper;
@@ -49,7 +49,7 @@ using android::hardware::MQFlavor;
 
 // Generated HIDL files
 
-using android::hardware::benchmarks::msgq::V1_0::IBenchmarkMsgQ;
+using android::hardware::tests::msgq::V1_0::IBenchmarkMsgQ;
 
 /*
  * The various packet sizes used are as follows.
@@ -62,7 +62,7 @@ enum PacketSizes {
     kPacketSize1024 = 1024
 };
 
-const char kServiceName[] = "android.hardware.benchmarks.msgq@1.0::IBenchmarkMsgQ";
+const char kServiceName[] = "android.hardware.tests.msgq@1.0::IBenchmarkMsgQ";
 
 namespace {
 /*
