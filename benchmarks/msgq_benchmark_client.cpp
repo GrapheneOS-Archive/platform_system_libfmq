@@ -21,7 +21,7 @@
 #include <chrono>
 #include <iostream>
 
-#include <android/hardware/tests/msgq/1.0/IBenchmarkMsgQ.h>
+#include <android/hardware/benchmarks/msgq/1.0/IBenchmarkMsgQ.h>
 #include <fmq/MessageQueue.h>
 
 // libutils:
@@ -30,7 +30,7 @@ using android::sp;
 using android::status_t;
 
 // generated
-using android::hardware::tests::msgq::V1_0::IBenchmarkMsgQ;
+using android::hardware::benchmarks::msgq::V1_0::IBenchmarkMsgQ;
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -61,7 +61,7 @@ enum PacketSizes {
     kPacketSize1024 = 1024
 };
 
-const char kServiceName[] = "android.hardware.tests.msgq@1.0::IBenchmarkMsgQ";
+const char kServiceName[] = "android.hardware.benchmarks.msgq@1.0::IBenchmarkMsgQ";
 
 class MQTestClient : public ::testing::Test {
 protected:
