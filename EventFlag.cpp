@@ -176,6 +176,11 @@ status_t EventFlag::wait(uint32_t bitmask, uint32_t* efState, int64_t timeoutNan
     } else {
         old = std::atomic_fetch_and(mEfWordPtr, ~bitmask);
         *efState = old & bitmask;
+
+        if (*efState == 0) {
+            /* Return -EINTR for a spurious wakeup */
+            status = -EINTR;
+        }
     }
     return status;
 }
