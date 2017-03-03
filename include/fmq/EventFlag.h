@@ -96,7 +96,8 @@ struct EventFlag {
      * @return Returns a status_t error code. Likely error codes are
      * NO_ERROR if the method is successful, BAD_VALUE due to bad input
      * parameters, TIMED_OUT if the wait timedout as per the timeout
-     * parameter.
+     * parameter, -EAGAIN or -EINTR to indicate that the caller needs to invoke
+     * wait() again.
      */
     status_t wait(uint32_t bitmask, uint32_t* efState, int64_t timeOutNanoSeconds = 0);
 
