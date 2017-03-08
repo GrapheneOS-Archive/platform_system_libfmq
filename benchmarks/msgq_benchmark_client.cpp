@@ -61,8 +61,6 @@ enum PacketSizes {
     kPacketSize1024 = 1024
 };
 
-const char kServiceName[] = "android.hardware.tests.msgq@1.0::IBenchmarkMsgQ";
-
 class MQTestClient : public ::testing::Test {
 protected:
     virtual void TearDown() {
@@ -71,8 +69,9 @@ protected:
     }
 
     virtual void SetUp() {
-        service = IBenchmarkMsgQ::getService(kServiceName);
+        service = IBenchmarkMsgQ::getService();
         ASSERT_NE(service, nullptr);
+        ASSERT_TRUE(service->isRemote());
         /*
          * Request service to configure the client inbox queue.
          */
