@@ -38,28 +38,15 @@ using android::hardware::MessageQueue;
 using android::hardware::MQDescriptorSync;
 using android::hardware::MQDescriptorUnsync;
 
-namespace android {
-namespace hardware {
-namespace tests {
-namespace client {
-
-const char kServiceName[] = "android.hardware.tests.msgq@1.0::ITestMsgQ";
-
-}  // namespace client
-}  // namespace tests
-}  // namespace hardware
-}  // namespace android
-
 typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
 typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
 
 class UnsynchronizedWriteClientMultiProcess : public ::testing::Test {
 protected:
     void getQueue(MessageQueueUnsync** fmq, sp<ITestMsgQ>& service, bool setupQueue) {
-        namespace clientTests = android::hardware::tests::client;
-
-        service = ITestMsgQ::getService(clientTests::kServiceName);
+        service = ITestMsgQ::getService();
         ASSERT_NE(service, nullptr);
+        ASSERT_TRUE(service->isRemote());
         service->getFmqUnsyncWrite(setupQueue,
                                    [fmq](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
                                        ASSERT_TRUE(ret);
@@ -77,10 +64,9 @@ protected:
     }
 
     virtual void SetUp() {
-        namespace clientTests = android::hardware::tests::client;
-
-        mService = ITestMsgQ::getService(clientTests::kServiceName);
+        mService = ITestMsgQ::getService();
         ASSERT_NE(mService, nullptr);
+        ASSERT_TRUE(mService->isRemote());
         mService->configureFmqSyncReadWrite([this](
                 bool ret, const MQDescriptorSync<uint16_t>& in) {
             ASSERT_TRUE(ret);
@@ -98,28 +84,27 @@ protected:
 
 class UnsynchronizedWriteClient : public ::testing::Test {
 protected:
-  virtual void TearDown() {
-      delete mQueue;
-  }
+    virtual void TearDown() {
+        delete mQueue;
+    }
 
-  virtual void SetUp() {
-      namespace clientTests = android::hardware::tests::client;
+    virtual void SetUp() {
+        mService = ITestMsgQ::getService();
+        ASSERT_NE(mService, nullptr);
+        ASSERT_TRUE(mService->isRemote());
+        mService->getFmqUnsyncWrite(true /* configureFmq */,
+                                    [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
+                                        ASSERT_TRUE(ret);
+                                        mQueue = new (std::nothrow) MessageQueueUnsync(in);
+                                    });
+        ASSERT_NE(nullptr, mQueue);
+        ASSERT_TRUE(mQueue->isValid());
+        mNumMessagesMax = mQueue->getQuantumCount();
+    }
 
-      mService = ITestMsgQ::getService(clientTests::kServiceName);
-      ASSERT_NE(mService, nullptr);
-      mService->getFmqUnsyncWrite(true /* configureFmq */,
-                                  [this](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
-                                      ASSERT_TRUE(ret);
-                                      mQueue = new (std::nothrow) MessageQueueUnsync(in);
-                                  });
-      ASSERT_NE(nullptr, mQueue);
-      ASSERT_TRUE(mQueue->isValid());
-      mNumMessagesMax = mQueue->getQuantumCount();
-  }
-
-  sp<ITestMsgQ> mService;
-  MessageQueueUnsync*  mQueue = nullptr;
-  size_t mNumMessagesMax = 0;
+    sp<ITestMsgQ> mService;
+    MessageQueueUnsync*  mQueue = nullptr;
+    size_t mNumMessagesMax = 0;
 };
 
 /*
