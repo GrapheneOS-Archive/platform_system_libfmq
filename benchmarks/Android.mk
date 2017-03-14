@@ -17,28 +17,6 @@
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := mq_benchmark_service
-LOCAL_SRC_FILES := \
-    msgq_benchmark_service.cpp
-
-LOCAL_SHARED_LIBRARIES := \
-    libhwbinder \
-    libbase \
-    liblog \
-    libcutils \
-    libutils \
-    libhidlbase \
-    libhidltransport
-
-LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
-
-LOCAL_MULTILIB := both
-LOCAL_MODULE_STEM_32 := $(LOCAL_MODULE)32
-LOCAL_MODULE_STEM_64 := $(LOCAL_MODULE)64
-
-include $(BUILD_EXECUTABLE)
-
-include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
     msgq_benchmark_client.cpp
 
