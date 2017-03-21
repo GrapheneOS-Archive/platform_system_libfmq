@@ -761,19 +761,23 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
     }
 
     bool shouldTimeOut = timeOutNanos != 0;
-    int64_t prevTimeNs = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
+    int64_t prevTimeNanos = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
 
-    bool endWait = false;
-    while (endWait == false) {
-        /* It is not require to adjust 'timeOutNanos' if 'shouldTimeOut' is true */
+    while (true) {
+        /* It is not required to adjust 'timeOutNanos' if 'shouldTimeOut' is false */
         if (shouldTimeOut) {
+            /*
+             * The current time and 'prevTimeNanos' are both CLOCK_BOOTTIME clock values(converted
+             * to Nanoseconds)
+             */
             int64_t currentTimeNs = android::elapsedRealtimeNano();
             /*
-             * Decrement TimeOutNanos to account for the time taken to complete the last
+             * Decrement 'timeOutNanos' to account for the time taken to complete the last
              * iteration of the while loop.
              */
-            timeOutNanos -= currentTimeNs - prevTimeNs;
-            prevTimeNs = currentTimeNs;
+            timeOutNanos -= currentTimeNs - prevTimeNanos;
+            prevTimeNanos = currentTimeNs;
+
             if (timeOutNanos <= 0) {
                 /*
                  * Attempt write in case a context switch happened outside of
@@ -789,44 +793,27 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
          * notification.
          */
         uint32_t efState = 0;
-        status_t status = evFlag->wait(readNotification, &efState, timeOutNanos);
-        switch (status) {
-            case android::NO_ERROR:
-                /*
-                 * If wait() returns NO_ERROR, break and check efState.
-                 */
-                break;
-            case android::TIMED_OUT:
-                /*
-                 * If wait() returns android::TIMEDOUT, break out of the while loop
-                 * and return false;
-                 */
-                endWait = true;
-                continue;
-            case -EAGAIN:
-            case -EINTR:
-                /*
-                 * For errors -EAGAIN and -EINTR, go back to wait.
-                 */
-                continue;
-            default:
-                /*
-                 * Throw an error for any other error code since it is unexpected.
-                 */
+        status_t status = evFlag->wait(readNotification,
+                                       &efState,
+                                       timeOutNanos,
+                                       true /* retry on spurious wake */);
 
-                endWait = true;
-                ALOGE("Unexpected error code from EventFlag Wait %d", status);
-                continue;
+        if (status != android::TIMED_OUT && status != android::NO_ERROR) {
+            ALOGE("Unexpected error code from EventFlag Wait write %d", status);
+            break;
+        }
+
+        if (status == android::TIMED_OUT) {
+            break;
         }
 
         /*
-         * If the wake() was not due to the readNotification bit or if
-         * there is still insufficient space to write to the FMQ,
+         * If there is still insufficient space to write to the FMQ,
          * keep waiting for another readNotification.
          */
         if ((efState & readNotification) && write(data, count)) {
             result = true;
-            endWait = true;
+            break;
         }
     }
 
@@ -889,19 +876,22 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
     }
 
     bool shouldTimeOut = timeOutNanos != 0;
-    int64_t prevTimeNs = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
+    int64_t prevTimeNanos = shouldTimeOut ? android::elapsedRealtimeNano() : 0;
 
-    bool endWait = false;
-    while (endWait == false) {
-        /* It is not require to adjust 'timeOutNanos' if 'shouldTimeOut' is true */
+    while (true) {
+        /* It is not required to adjust 'timeOutNanos' if 'shouldTimeOut' is false */
         if (shouldTimeOut) {
+            /*
+             * The current time and 'prevTimeNanos' are both CLOCK_BOOTTIME clock values(converted
+             * to Nanoseconds)
+             */
             int64_t currentTimeNs = android::elapsedRealtimeNano();
             /*
-             * Decrement TimeOutNanos to account for the time taken to complete the last
+             * Decrement 'timeOutNanos' to account for the time taken to complete the last
              * iteration of the while loop.
              */
-            timeOutNanos -= currentTimeNs - prevTimeNs;
-            prevTimeNs = currentTimeNs;
+            timeOutNanos -= currentTimeNs - prevTimeNanos;
+            prevTimeNanos = currentTimeNs;
 
             if (timeOutNanos <= 0) {
                 /*
@@ -918,44 +908,27 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
          * notification.
          */
         uint32_t efState = 0;
-        status_t status = evFlag->wait(writeNotification, &efState, timeOutNanos);
-        switch (status) {
-            case android::NO_ERROR:
-                /*
-                 * If wait() returns NO_ERROR, break and check efState.
-                 */
-                break;
-            case android::TIMED_OUT:
-                /*
-                 * If wait() returns android::TIMEDOUT, break out of the while loop
-                 * and return false;
-                 */
-                endWait = true;
-                continue;
-            case -EAGAIN:
-            case -EINTR:
-                /*
-                 * For errors -EAGAIN and -EINTR, go back to wait.
-                 */
-                continue;
-            default:
-                /*
-                 * Throw an error for any other error code since it is unexpected.
-                 */
+        status_t status = evFlag->wait(writeNotification,
+                                       &efState,
+                                       timeOutNanos,
+                                       true /* retry on spurious wake */);
 
-                endWait = true;
-                ALOGE("Unexpected error code from EventFlag Wait %d", status);
-                continue;
+        if (status != android::TIMED_OUT && status != android::NO_ERROR) {
+            ALOGE("Unexpected error code from EventFlag Wait status %d", status);
+            break;
+        }
+
+        if (status == android::TIMED_OUT) {
+            break;
         }
 
         /*
-         * If the wake() was not due to the writeNotification bit being set
-         * or if the data in FMQ is still insufficient, go back to waiting
+         * If the data in FMQ is still insufficient, go back to waiting
          * for another write notification.
          */
         if ((efState & writeNotification) && read(data, count)) {
             result = true;
-            endWait = true;
+            break;
         }
     }
 
