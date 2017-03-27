@@ -237,7 +237,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWrite1) {
  */
 TEST_F(SynchronizedReadWriteClient, BlockingReadWrite2) {
     const size_t dataLen = 64;
-    uint16_t data[dataLen] = {0};
+    std::vector<uint16_t> data(mNumMessagesMax);
 
     /*
      * Request service to perform a blocking read using default EventFlag
@@ -249,7 +249,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWrite2) {
     /* Cause a context switch to allow service to block */
     sched_yield();
 
-    bool ret = mQueue->writeBlocking(data,
+    bool ret = mQueue->writeBlocking(&data[0],
                                      dataLen);
     ASSERT_TRUE(ret);
 
@@ -257,7 +257,7 @@ TEST_F(SynchronizedReadWriteClient, BlockingReadWrite2) {
      * If the blocking read was successful, another write of size
      * mNumMessagesMax will succeed.
      */
-    ret = mQueue->writeBlocking(data, mNumMessagesMax, 5000000000 /* timeOutNanos */);
+    ret = mQueue->writeBlocking(&data[0], mNumMessagesMax, 5000000000 /* timeOutNanos */);
     ASSERT_TRUE(ret);
 }
 
