@@ -16,6 +16,19 @@
 
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
+LOCAL_MODULE := fmq_test
+LOCAL_MODULE_CLASS := NATIVE_TESTS
+LOCAL_SRC_FILES := fmq_test
+LOCAL_REQUIRED_MODULES :=                           \
+    mq_test_client                                  \
+    android.hardware.tests.msgq@1.0-service-test    \
+    mq_test_client_32                               \
+    android.hardware.tests.msgq@1.0-service-test_32 \
+    hidl_test_helper
+
+include $(BUILD_PREBUILT)
+
+include $(CLEAR_VARS)
 LOCAL_SRC_FILES := \
     msgq_test_client.cpp
 
@@ -31,6 +44,10 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_CFLAGS := -Wall -Werror
 LOCAL_SHARED_LIBRARIES += android.hardware.tests.msgq@1.0 libfmq
 LOCAL_MODULE := mq_test_client
+LOCAL_REQUIRED_MODULES := \
+    android.hardware.tests.msgq@1.0-impl_32 \
+    android.hardware.tests.msgq@1.0-impl
+
 include $(BUILD_NATIVE_TEST)
 
 include $(CLEAR_VARS)
