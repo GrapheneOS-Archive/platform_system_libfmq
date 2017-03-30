@@ -64,3 +64,8 @@ LOCAL_MODULE := mq_test
 LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)
 
+include $(CLEAR_VARS)
+
+LOCAL_MODULE := VtsFmqUnitTests
+VTS_CONFIG_SRC_DIR := system/libfmq/tests
+include test/vts/tools/build/Android.host_config.mk
