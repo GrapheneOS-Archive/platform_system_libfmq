@@ -628,6 +628,11 @@ MessageQueue<T, flavor>::MessageQueue(const Descriptor& Desc, bool resetPointers
 
 template <typename T, MQFlavor flavor>
 MessageQueue<T, flavor>::MessageQueue(size_t numElementsInQueue, bool configureEventFlagWord) {
+
+    // Check if the buffer size would not overflow size_t
+    if (numElementsInQueue > SIZE_MAX / sizeof(T)) {
+        return;
+    }
     /*
      * The FMQ needs to allocate memory for the ringbuffer as well as for the
      * read and write pointer counters. If an EventFlag word is to be configured,
