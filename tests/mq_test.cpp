@@ -95,7 +95,7 @@ protected:
 };
 
 class QueueSizeOdd : public ::testing::Test {
- protected:
+protected:
   virtual void TearDown() {
       delete mQueue;
   }
@@ -117,6 +117,9 @@ class QueueSizeOdd : public ::testing::Test {
 
   MessageQueueSync* mQueue;
   size_t mNumMessagesMax = 0;
+};
+
+class BadQueueConfig: public ::testing::Test {
 };
 
 /*
@@ -187,6 +190,19 @@ void ReaderThreadBlocking2(
     ASSERT_TRUE(ret);
     status = android::hardware::EventFlag::deleteEventFlag(&efGroup);
     ASSERT_EQ(android::NO_ERROR, status);
+}
+
+
+TEST_F(BadQueueConfig, QueueSizeTooLarge) {
+    typedef android::hardware::MessageQueue<uint16_t, android::hardware::kSynchronizedReadWrite>
+            MessageQueueSync16;
+    size_t numElementsInQueue = SIZE_MAX / sizeof(uint16_t) + 1;
+    MessageQueueSync16 * fmq = new (std::nothrow) MessageQueueSync16(numElementsInQueue);
+    ASSERT_NE(nullptr, fmq);
+    /*
+     * Should fail due to size being too large to fit into size_t.
+     */
+    ASSERT_FALSE(fmq->isValid());
 }
 
 /*
