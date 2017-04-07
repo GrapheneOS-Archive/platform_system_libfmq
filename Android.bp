@@ -34,4 +34,5 @@ cc_library_shared {
         "-Wall",
         "-Werror",
     ],
+    vendor_available: true,
 }
