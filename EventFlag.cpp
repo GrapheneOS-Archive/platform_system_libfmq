@@ -20,6 +20,7 @@
 #include <linux/futex.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 #include <utils/Log.h>
 #include <utils/SystemClock.h>
 #include <new>
