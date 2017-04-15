@@ -17,7 +17,6 @@
 #ifndef HIDL_MQ_H
 #define HIDL_MQ_H
 
-#include <android-base/logging.h>
 #include <atomic>
 #include <cutils/ashmem.h>
 #include <fmq/EventFlag.h>
@@ -29,6 +28,11 @@
 
 namespace android {
 namespace hardware {
+
+namespace details {
+void check(bool exp);
+void logError(const std::string &message);
+}  // namespace details
 
 template <typename T, MQFlavor flavor>
 struct MessageQueue {
@@ -593,11 +597,11 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
         mReadPtr = new (std::nothrow) std::atomic<uint64_t>;
     }
 
-    CHECK(mReadPtr != nullptr);
+    details::check(mReadPtr != nullptr);
 
     mWritePtr =
             reinterpret_cast<std::atomic<uint64_t>*>(mapGrantorDescr(Descriptor::WRITEPTRPOS));
-    CHECK(mWritePtr != nullptr);
+    details::check(mWritePtr != nullptr);
 
     if (resetPointers) {
         mReadPtr->store(0, std::memory_order_release);
@@ -608,7 +612,7 @@ void MessageQueue<T, flavor>::initMemory(bool resetPointers) {
     }
 
     mRing = reinterpret_cast<uint8_t*>(mapGrantorDescr(Descriptor::DATAPTRPOS));
-    CHECK(mRing != nullptr);
+    details::check(mRing != nullptr);
 
     mEvFlagWord = static_cast<std::atomic<uint32_t>*>(mapGrantorDescr(Descriptor::EVFLAGWORDPOS));
     if (mEvFlagWord != nullptr) {
@@ -804,7 +808,7 @@ bool MessageQueue<T, flavor>::writeBlocking(const T* data,
                                        true /* retry on spurious wake */);
 
         if (status != android::TIMED_OUT && status != android::NO_ERROR) {
-            ALOGE("Unexpected error code from EventFlag Wait write %d", status);
+            details::logError("Unexpected error code from EventFlag Wait status " + std::to_string(status));
             break;
         }
 
@@ -919,7 +923,7 @@ bool MessageQueue<T, flavor>::readBlocking(T* data,
                                        true /* retry on spurious wake */);
 
         if (status != android::TIMED_OUT && status != android::NO_ERROR) {
-            ALOGE("Unexpected error code from EventFlag Wait status %d", status);
+            details::logError("Unexpected error code from EventFlag Wait status " + std::to_string(status));
             break;
         }
 
