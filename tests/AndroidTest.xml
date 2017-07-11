@@ -23,9 +23,10 @@
         <option name="push" value="DATA/nativetest/mq_test_client/mq_test_client->/data/nativetest/mq_test_client/mq_test_client" />
         <option name="push" value="DATA/nativetest64/mq_test_client/mq_test_client->/data/nativetest64/mq_test_client/mq_test_client" />
         <option name="push" value="DATA/nativetest64/hidl_test_helper->/data/nativetest64/hidl_test_helper" />
-        <option name="push" value="DATA/nativetest64/fmq_test->/data/nativetest64/fmq_test" />
-        <option name="push" value="DATA/lib64/hw/android.hardware.tests.msgq@1.0-impl.so->/vendor/lib64/hw/android.hardware.tests.msgq@1.0-impl.so" />
-        <option name="push" value="DATA/lib/hw/android.hardware.tests.msgq@1.0-impl.so->/vendor/lib/hw/android.hardware.tests.msgq@1.0-impl.so" />
+        <option name="push" value="DATA/lib/android.hardware.tests.msgq@1.0.so->/system/lib/android.hardware.tests.msgq@1.0.so" />
+        <option name="push" value="DATA/lib64/android.hardware.tests.msgq@1.0.so->/system/lib64/android.hardware.tests.msgq@1.0.so" />
+        <option name="push" value="DATA/vendor/lib64/hw/android.hardware.tests.msgq@1.0-impl.so->/vendor/lib64/hw/android.hardware.tests.msgq@1.0-impl.so" />
+        <option name="push" value="DATA/vendor/lib/hw/android.hardware.tests.msgq@1.0-impl.so->/vendor/lib/hw/android.hardware.tests.msgq@1.0-impl.so" />
     </target_preparer>
     <target_preparer class="com.android.tradefed.targetprep.VtsPythonVirtualenvPreparer" />
     <test class="com.android.tradefed.testtype.VtsMultiDeviceTest">
