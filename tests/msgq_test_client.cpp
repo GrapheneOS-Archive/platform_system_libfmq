@@ -42,18 +42,17 @@ typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
 typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
 
 class UnsynchronizedWriteClientMultiProcess : public ::testing::Test {
-protected:
-    void getQueue(MessageQueueUnsync** fmq, sp<ITestMsgQ>& service, bool setupQueue) {
-        service = ITestMsgQ::getService();
-        ASSERT_NE(service, nullptr);
-        ASSERT_TRUE(service->isRemote());
-        service->getFmqUnsyncWrite(setupQueue,
-                                   [fmq](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
-                                       ASSERT_TRUE(ret);
-                                       *fmq = new (std::nothrow) MessageQueueUnsync(in);
-                                   });
-        ASSERT_NE(*fmq, nullptr);
-        ASSERT_TRUE((*fmq)->isValid());
+   protected:
+    void getQueue(MessageQueueUnsync** fmq, sp<ITestMsgQ>* service, bool setupQueue) {
+        *service = ITestMsgQ::getService();
+        *fmq = nullptr;
+        if (*service == nullptr) return;
+        if (!(*service)->isRemote()) return;
+        (*service)->getFmqUnsyncWrite(setupQueue,
+                                      [fmq](bool ret, const MQDescriptorUnsync<uint16_t>& in) {
+                                          ASSERT_TRUE(ret);
+                                          *fmq = new (std::nothrow) MessageQueueUnsync(in);
+                                      });
     }
 };
 
@@ -138,7 +137,11 @@ TEST_F(UnsynchronizedWriteClientMultiProcess, MultipleReadersAfterOverflow) {
     if ((pid = fork()) == 0) {
         sp<ITestMsgQ> testService;
         MessageQueueUnsync*  queue = nullptr;
-        getQueue(&queue, testService, true /* setupQueue */);
+        getQueue(&queue, &testService, true /* setupQueue */);
+        ASSERT_NE(testService, nullptr);
+        ASSERT_TRUE(testService->isRemote());
+        ASSERT_NE(queue, nullptr);
+        ASSERT_TRUE(queue->isValid());
 
         size_t numMessagesMax = queue->getQuantumCount();
 
@@ -183,7 +186,11 @@ TEST_F(UnsynchronizedWriteClientMultiProcess, MultipleReadersAfterOverflow) {
         sp<ITestMsgQ> testService;
         MessageQueueUnsync* queue = nullptr;
 
-        getQueue(&queue, testService, false /* setupQueue */);
+        getQueue(&queue, &testService, false /* setupQueue */);
+        ASSERT_NE(testService, nullptr);
+        ASSERT_TRUE(testService->isRemote());
+        ASSERT_NE(queue, nullptr);
+        ASSERT_TRUE(queue->isValid());
 
         // This read should fail due to the write overflow.
         std::vector<uint16_t> readData(dataLen);
