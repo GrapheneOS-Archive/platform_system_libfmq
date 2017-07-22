@@ -19,9 +19,10 @@
 #error "GTest did not detect pthread library."
 #endif
 
-#include <fmq/MessageQueue.h>
 #include <android/hardware/tests/msgq/1.0/ITestMsgQ.h>
 #include <fmq/EventFlag.h>
+#include <fmq/MessageQueue.h>
+#include <hidl/ServiceManagement.h>
 
 // libutils:
 using android::OK;
@@ -37,14 +38,22 @@ using android::hardware::kUnsynchronizedWrite;
 using android::hardware::MessageQueue;
 using android::hardware::MQDescriptorSync;
 using android::hardware::MQDescriptorUnsync;
+using android::hardware::details::waitForHwService;
 
 typedef MessageQueue<uint16_t, kSynchronizedReadWrite> MessageQueueSync;
 typedef MessageQueue<uint16_t, kUnsynchronizedWrite> MessageQueueUnsync;
 
+static sp<ITestMsgQ> waitGetTestService() {
+    // waitForHwService is required because ITestMsgQ is not in manifest.xml.
+    // "Real" HALs shouldn't be doing this.
+    waitForHwService(ITestMsgQ::descriptor, "default");
+    return ITestMsgQ::getService();
+}
+
 class UnsynchronizedWriteClientMultiProcess : public ::testing::Test {
    protected:
     void getQueue(MessageQueueUnsync** fmq, sp<ITestMsgQ>* service, bool setupQueue) {
-        *service = ITestMsgQ::getService();
+        *service = waitGetTestService();
         *fmq = nullptr;
         if (*service == nullptr) return;
         if (!(*service)->isRemote()) return;
@@ -63,7 +72,7 @@ protected:
     }
 
     virtual void SetUp() {
-        mService = ITestMsgQ::getService();
+        mService = waitGetTestService();
         ASSERT_NE(mService, nullptr);
         ASSERT_TRUE(mService->isRemote());
         mService->configureFmqSyncReadWrite([this](
@@ -88,7 +97,7 @@ protected:
     }
 
     virtual void SetUp() {
-        mService = ITestMsgQ::getService();
+        mService = waitGetTestService();
         ASSERT_NE(mService, nullptr);
         ASSERT_TRUE(mService->isRemote());
         mService->getFmqUnsyncWrite(true /* configureFmq */,
