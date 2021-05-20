@@ -72,7 +72,7 @@ protected:
     }
 
     virtual void SetUp() {
-        static constexpr size_t kNumElementsInQueue = 1024;
+        static constexpr size_t kNumElementsInQueue = (PAGE_SIZE - 16) / sizeof(uint16_t);
         mService = waitGetTestService();
         ASSERT_NE(mService, nullptr);
         ASSERT_TRUE(mService->isRemote());
@@ -421,6 +421,41 @@ TEST_F(SynchronizedReadWriteClient, SmallInputReaderTest1) {
     uint16_t readData[dataLen] = {};
     ASSERT_TRUE(mQueue->read(readData, dataLen));
     ASSERT_TRUE(verifyData(readData, dataLen));
+}
+
+/*
+ * Request mService to write a message to the queue followed by a beginRead().
+ * Get a pointer to the memory region for the that first message. Set the write
+ * counter to the last byte in the ring buffer. Request another write from
+ * mService. The write should fail because the write address is misaligned.
+ */
+TEST_F(SynchronizedReadWriteClient, MisalignedWriteCounter) {
+    const size_t dataLen = 1;
+    bool ret = mService->requestWriteFmqSync(dataLen);
+    ASSERT_TRUE(ret);
+    // begin read and get a MemTransaction object for the first object in the queue
+    MessageQueueSync::MemTransaction tx;
+    ASSERT_TRUE(mQueue->beginRead(dataLen, &tx));
+    // get a pointer to the beginning of the ring buffer
+    const auto& region = tx.getFirstRegion();
+    uint16_t* firstStart = region.getAddress();
+
+    // because this is the first location in the ring buffer, we can get
+    // access to the read and write pointer stored in the fd. 8 bytes back for the
+    // write counter and 16 bytes back for the read counter
+    uint64_t* writeCntr = (uint64_t*)((uint8_t*)firstStart - 8);
+
+    // set it to point to the very last byte in the ring buffer
+    *(writeCntr) = mQueue->getQuantumCount() * mQueue->getQuantumSize() - 1;
+    ASSERT_TRUE(*writeCntr % sizeof(uint16_t) != 0);
+
+    // this is not actually necessary, but it's the expected the pattern.
+    mQueue->commitRead(dataLen);
+
+    // This next write will be misaligned and will overlap outside of the ring buffer.
+    // The write should fail.
+    ret = mService->requestWriteFmqSync(dataLen);
+    EXPECT_FALSE(ret);
 }
 
 /*
