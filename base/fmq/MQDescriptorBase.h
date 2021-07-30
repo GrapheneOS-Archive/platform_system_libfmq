@@ -54,6 +54,7 @@ static_assert(__alignof(GrantorDescriptor) == 8, "wrong alignment");
 namespace details {
 
 void logError(const std::string& message);
+void check(bool exp, const char* message);
 
 typedef uint64_t RingBufferPosition;
 enum GrantorType : int { READPTRPOS = 0, WRITEPTRPOS, DATAPTRPOS, EVFLAGWORDPOS };
@@ -72,20 +73,12 @@ static constexpr int32_t kMinGrantorCountForEvFlagSupport = EVFLAGWORDPOS + 1;
 
 static inline size_t alignToWordBoundary(size_t length) {
     constexpr size_t kAlignmentSize = 64;
-    if (kAlignmentSize % __WORDSIZE != 0) {
-#ifdef __BIONIC__
-        __assert(__FILE__, __LINE__, "Incompatible word size");
-#endif
-    }
+    static_assert(kAlignmentSize % __WORDSIZE == 0, "Incompatible word size");
 
     /*
      * Check if alignment to word boundary would cause an overflow.
      */
-    if (length > SIZE_MAX - kAlignmentSize / 8 + 1) {
-#ifdef __BIONIC__
-        __assert(__FILE__, __LINE__, "Queue size too large");
-#endif
-    }
+    check(length <= SIZE_MAX - kAlignmentSize / 8 + 1, "Queue size too large");
 
     return (length + kAlignmentSize / 8 - 1) & ~(kAlignmentSize / 8 - 1U);
 }
