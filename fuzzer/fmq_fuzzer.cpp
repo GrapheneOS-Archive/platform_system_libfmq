@@ -99,8 +99,10 @@ void reader(const Desc& desc, std::vector<uint8_t> readerData, bool userFd) {
             if (ring == nullptr) {
                 ring = firstStart;
             }
-            uint64_t* writeCounter = getCounterPtr(ring, kWriteCounterOffsetBytes);
-            *writeCounter = fdp.ConsumeIntegral<uint64_t>();
+            if (fdp.ConsumeIntegral<uint8_t>() == 1) {
+                uint64_t* writeCounter = getCounterPtr(ring, kWriteCounterOffsetBytes);
+                *writeCounter = fdp.ConsumeIntegral<uint64_t>();
+            }
         }
         (void)std::to_string(*firstStart);
 
@@ -154,8 +156,10 @@ void writer(Queue& writeMq, FuzzedDataProvider& fdp, bool userFd) {
             if (ring == nullptr) {
                 ring = firstStart;
             }
-            uint64_t* readCounter = getCounterPtr(ring, kReadCounterOffsetBytes);
-            *readCounter = fdp.ConsumeIntegral<uint64_t>();
+            if (fdp.ConsumeIntegral<uint8_t>() == 1) {
+                uint64_t* readCounter = getCounterPtr(ring, kReadCounterOffsetBytes);
+                *readCounter = fdp.ConsumeIntegral<uint64_t>();
+            }
         }
         *firstStart = fdp.ConsumeIntegral<payload_t>();
 
