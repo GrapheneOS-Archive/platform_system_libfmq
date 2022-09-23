@@ -755,10 +755,10 @@ MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(size_t numElemen
 
 template <template <typename, MQFlavor> typename MQDescriptorType, typename T, MQFlavor flavor>
 MessageQueueBase<MQDescriptorType, T, flavor>::~MessageQueueBase() {
-    if (flavor == kUnsynchronizedWrite && mReadPtr != nullptr) {
-        delete mReadPtr;
-    } else if (mReadPtr != nullptr) {
+    if (flavor == kSynchronizedReadWrite && mReadPtr != nullptr) {
         unmapGrantorDescr(mReadPtr, hardware::details::READPTRPOS);
+    } else if (mReadPtr != nullptr) {
+        delete mReadPtr;
     }
     if (mWritePtr != nullptr) {
         unmapGrantorDescr(mWritePtr, hardware::details::WRITEPTRPOS);
