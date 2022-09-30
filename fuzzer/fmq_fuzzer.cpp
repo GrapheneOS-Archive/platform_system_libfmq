@@ -197,56 +197,51 @@ void writerBlocking<MessageQueueUnsync>(MessageQueueUnsync&, FuzzedDataProvider&
                                         std::atomic<size_t>&, std::atomic<size_t>&) {}
 
 template <typename Queue, typename Desc>
-void fuzzAidlWithReaders(std::vector<uint8_t>& writerData,
-                         std::vector<std::vector<uint8_t>>& readerData, bool blocking) {
-    FuzzedDataProvider fdp(&writerData[0], writerData.size());
-    bool evFlag = blocking || fdp.ConsumeBool();
-    android::base::unique_fd dataFd;
-    size_t bufferSize = 0;
-    size_t numElements = fdp.ConsumeIntegralInRange<size_t>(1, kMaxNumElements);
-    bool userFd = fdp.ConsumeBool();
-    if (userFd) {
-        // run test with our own data region
-        bufferSize = numElements * sizeof(payload_t);
-        dataFd.reset(::ashmem_create_region("SyncReadWrite", bufferSize));
-    }
-    Queue writeMq(numElements, evFlag, std::move(dataFd), bufferSize);
-    if (!writeMq.isValid()) {
-        LOG(ERROR) << "AIDL write mq invalid";
-        return;
-    }
-    const auto desc = writeMq.dupeDesc();
-    CHECK(desc.handle.fds[0].get() != -1);
+inline std::optional<Desc> getDesc(Queue&);
 
-    std::atomic<size_t> readersNotFinished = readerData.size();
-    std::atomic<size_t> writersNotFinished = 1;
-    std::vector<std::thread> readers;
-    for (int i = 0; i < readerData.size(); i++) {
-        if (blocking) {
-            readers.emplace_back(readerBlocking<Queue, Desc>, std::ref(desc),
-                                 std::ref(readerData[i]), std::ref(readersNotFinished),
-                                 std::ref(writersNotFinished));
-
-        } else {
-            readers.emplace_back(reader<Queue, Desc>, std::ref(desc), std::ref(readerData[i]),
-                                 userFd);
-        }
-    }
-
-    if (blocking) {
-        writerBlocking<Queue>(writeMq, fdp, writersNotFinished, readersNotFinished);
+template <typename Queue, typename Desc>
+inline std::optional<Desc> getAidlDesc(Queue& queue) {
+    Desc desc = queue.dupeDesc();
+    if (desc.handle.fds[0].get() == -1) {
+        return std::nullopt;
     } else {
-        writer<Queue>(writeMq, fdp, userFd);
-    }
-
-    for (auto& reader : readers) {
-        reader.join();
+        return std::make_optional(std::move(desc));
     }
 }
 
+template <>
+inline std::optional<AidlMQDescSync> getDesc(AidlMessageQueueSync& queue) {
+    return getAidlDesc<AidlMessageQueueSync, AidlMQDescSync>(queue);
+}
+
+template <>
+inline std::optional<AidlMQDescUnsync> getDesc(AidlMessageQueueUnsync& queue) {
+    return getAidlDesc<AidlMessageQueueUnsync, AidlMQDescUnsync>(queue);
+}
+
 template <typename Queue, typename Desc>
-void fuzzHidlWithReaders(std::vector<uint8_t>& writerData,
-                         std::vector<std::vector<uint8_t>>& readerData, bool blocking) {
+inline std::optional<Desc> getHidlDesc(Queue& queue) {
+    auto desc = queue.getDesc();
+    if (!desc->isHandleValid()) {
+        return std::nullopt;
+    } else {
+        return std::make_optional(std::move(*desc));
+    }
+}
+
+template <>
+inline std::optional<MQDescSync> getDesc(MessageQueueSync& queue) {
+    return getHidlDesc<MessageQueueSync, MQDescSync>(queue);
+}
+
+template <>
+inline std::optional<MQDescUnsync> getDesc(MessageQueueUnsync& queue) {
+    return getHidlDesc<MessageQueueUnsync, MQDescUnsync>(queue);
+}
+
+template <typename Queue, typename Desc>
+void fuzzWithReaders(std::vector<uint8_t>& writerData,
+                     std::vector<std::vector<uint8_t>>& readerData, bool blocking) {
     FuzzedDataProvider fdp(&writerData[0], writerData.size());
     bool evFlag = blocking || fdp.ConsumeBool();
     android::base::unique_fd dataFd;
@@ -260,11 +255,10 @@ void fuzzHidlWithReaders(std::vector<uint8_t>& writerData,
     }
     Queue writeMq(numElements, evFlag, std::move(dataFd), bufferSize);
     if (!writeMq.isValid()) {
-        LOG(ERROR) << "HIDL write mq invalid";
         return;
     }
-    const auto desc = writeMq.getDesc();
-    CHECK(desc->isHandleValid());
+    const std::optional<Desc> desc(std::move(getDesc<Queue, Desc>(writeMq)));
+    CHECK(desc != std::nullopt);
 
     std::atomic<size_t> readersNotFinished = readerData.size();
     std::atomic<size_t> writersNotFinished = 1;
@@ -307,13 +301,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     bool fuzzBlocking = fdp.ConsumeBool();
     std::vector<uint8_t> writerData = fdp.ConsumeRemainingBytes<uint8_t>();
     if (fuzzSync) {
-        fuzzHidlWithReaders<MessageQueueSync, MQDescSync>(writerData, readerData, fuzzBlocking);
-        fuzzAidlWithReaders<AidlMessageQueueSync, AidlMQDescSync>(writerData, readerData,
-                                                                  fuzzBlocking);
+        fuzzWithReaders<MessageQueueSync, MQDescSync>(writerData, readerData, fuzzBlocking);
+        fuzzWithReaders<AidlMessageQueueSync, AidlMQDescSync>(writerData, readerData, fuzzBlocking);
     } else {
-        fuzzHidlWithReaders<MessageQueueUnsync, MQDescUnsync>(writerData, readerData, false);
-        fuzzAidlWithReaders<AidlMessageQueueUnsync, AidlMQDescUnsync>(writerData, readerData,
-                                                                      false);
+        fuzzWithReaders<MessageQueueUnsync, MQDescUnsync>(writerData, readerData, false);
+        fuzzWithReaders<AidlMessageQueueUnsync, AidlMQDescUnsync>(writerData, readerData, false);
     }
 
     return 0;
