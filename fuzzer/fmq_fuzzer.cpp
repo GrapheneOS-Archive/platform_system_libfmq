@@ -164,7 +164,7 @@ void readerBlocking(const Desc& desc, std::vector<uint8_t>& readerData,
     FuzzedDataProvider fdp(&readerData[0], readerData.size());
     do {
         size_t count = fdp.remaining_bytes()
-                               ? fdp.ConsumeIntegralInRange<size_t>(1, readMq.getQuantumCount())
+                               ? fdp.ConsumeIntegralInRange<size_t>(0, readMq.getQuantumCount() + 1)
                                : 1;
         std::vector<payload_t> data;
         data.resize(count);
@@ -220,7 +220,7 @@ void writerBlocking(Queue& writeMq, FuzzedDataProvider& fdp,
                     std::atomic<size_t>& readersNotFinished) {
     android::base::ScopeGuard guard([&writersNotFinished]() { writersNotFinished--; });
     while (fdp.remaining_bytes() > sizeof(size_t) && readersNotFinished > 0) {
-        size_t count = fdp.ConsumeIntegralInRange<size_t>(1, writeMq.getQuantumCount());
+        size_t count = fdp.ConsumeIntegralInRange<size_t>(0, writeMq.getQuantumCount() + 1);
         std::vector<payload_t> data;
         for (int i = 0; i < count; i++) {
             data.push_back(fdp.ConsumeIntegral<payload_t>());
