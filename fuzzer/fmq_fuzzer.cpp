@@ -353,7 +353,7 @@ void fuzzWithReaders(std::vector<uint8_t>& writerData,
         android::base::unique_fd dataFd;
         if (userFd) {
             // run test with our own data region
-            dataFd.reset(::ashmem_create_region("CustomData", 4096));
+            dataFd.reset(::ashmem_create_region("CustomData", bufferSize));
         }
         writeMq = std::make_unique<Queue>(numElements, evFlag, std::move(dataFd), bufferSize);
     }
