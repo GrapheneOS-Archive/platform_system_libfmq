@@ -643,7 +643,8 @@ template <template <typename, MQFlavor> typename MQDescriptorType, typename T, M
 MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(const Descriptor& Desc,
                                                                 bool resetPointers) {
     mDesc = std::unique_ptr<Descriptor>(new (std::nothrow) Descriptor(Desc));
-    if (mDesc == nullptr) {
+    if (mDesc == nullptr || mDesc->getSize() == 0) {
+        hardware::details::logError("MQDescriptor is invalid or queue size is 0.");
         return;
     }
 
@@ -660,6 +661,10 @@ MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(size_t numElemen
         hardware::details::logError("Requested message queue size too large. Size of elements: " +
                                     std::to_string(sizeof(T)) +
                                     ". Number of elements: " + std::to_string(numElementsInQueue));
+        return;
+    }
+    if (numElementsInQueue == 0) {
+        hardware::details::logError("Requested queue size of 0.");
         return;
     }
     if (bufferFd != -1 && numElementsInQueue * sizeof(T) > bufferSize) {
