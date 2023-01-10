@@ -230,6 +230,7 @@ template <typename T>
 class BadQueueConfig : public TestBase<T> {};
 
 class AidlOnlyBadQueueConfig : public ::testing::Test {};
+class HidlOnlyBadQueueConfig : public ::testing::Test {};
 class Hidl2AidlOperation : public ::testing::Test {};
 class DoubleFdFailures : public ::testing::Test {};
 
@@ -308,6 +309,71 @@ TYPED_TEST(BadQueueConfig, QueueSizeTooLarge) {
      * Should fail due to size being too large to fit into size_t.
      */
     ASSERT_FALSE(fmq->isValid());
+}
+
+// {flags, fdIndex, offset, extent}
+static const std::vector<android::hardware::GrantorDescriptor> kGrantors = {
+        {0, 0, 0, 4096},
+        {0, 0, 0, 4096},
+        {0, 0, 0, 4096},
+};
+
+// Make sure this passes without invalid index/extent for the next two test
+// cases
+TEST_F(HidlOnlyBadQueueConfig, SanityCheck) {
+    std::vector<android::hardware::GrantorDescriptor> grantors = kGrantors;
+
+    native_handle_t* handle = native_handle_create(1, 0);
+    int ashmemFd = ashmem_create_region("QueueHidlOnlyBad", 4096);
+    ashmem_set_prot_region(ashmemFd, PROT_READ | PROT_WRITE);
+    handle->data[0] = ashmemFd;
+
+    android::hardware::MQDescriptor<uint16_t, kSynchronizedReadWrite> desc(grantors, handle,
+                                                                           sizeof(uint16_t));
+    android::hardware::MessageQueue<uint16_t, kSynchronizedReadWrite> fmq(desc);
+    EXPECT_TRUE(fmq.isValid());
+
+    close(ashmemFd);
+}
+
+TEST_F(HidlOnlyBadQueueConfig, BadFdIndex) {
+    std::vector<android::hardware::GrantorDescriptor> grantors = kGrantors;
+    grantors[0].fdIndex = 5;
+
+    native_handle_t* handle = native_handle_create(1, 0);
+    int ashmemFd = ashmem_create_region("QueueHidlOnlyBad", 4096);
+    ashmem_set_prot_region(ashmemFd, PROT_READ | PROT_WRITE);
+    handle->data[0] = ashmemFd;
+
+    android::hardware::MQDescriptor<uint16_t, kSynchronizedReadWrite> desc(grantors, handle,
+                                                                           sizeof(uint16_t));
+    android::hardware::MessageQueue<uint16_t, kSynchronizedReadWrite> fmq(desc);
+    /*
+     * Should fail due fdIndex being out of range of the native_handle.
+     */
+    EXPECT_FALSE(fmq.isValid());
+
+    close(ashmemFd);
+}
+
+TEST_F(HidlOnlyBadQueueConfig, ExtentTooLarge) {
+    std::vector<android::hardware::GrantorDescriptor> grantors = kGrantors;
+    grantors[0].extent = 0xfffff041;
+
+    native_handle_t* handle = native_handle_create(1, 0);
+    int ashmemFd = ashmem_create_region("QueueHidlOnlyBad", 4096);
+    ashmem_set_prot_region(ashmemFd, PROT_READ | PROT_WRITE);
+    handle->data[0] = ashmemFd;
+
+    android::hardware::MQDescriptor<uint16_t, kSynchronizedReadWrite> desc(grantors, handle,
+                                                                           sizeof(uint16_t));
+    android::hardware::MessageQueue<uint16_t, kSynchronizedReadWrite> fmq(desc);
+    /*
+     * Should fail due to extent being too large.
+     */
+    EXPECT_FALSE(fmq.isValid());
+
+    close(ashmemFd);
 }
 
 // If this test fails and we do leak FDs, the next test will cause a crash
@@ -516,8 +582,8 @@ TEST_F(AidlOnlyBadQueueConfig, MismatchedPayloadSize) {
  */
 TEST_F(DoubleFdFailures, InvalidFd) {
     android::base::SetLogger(android::base::StdioLogger);
-    EXPECT_DEATH_IF_SUPPORTED(AidlMessageQueueSync(64, false, android::base::unique_fd(3000), 64),
-                              "Check failed: exp mRing is null");
+    auto queue = AidlMessageQueueSync(64, false, android::base::unique_fd(3000), 64);
+    EXPECT_FALSE(queue.isValid());
 }
 
 /*
