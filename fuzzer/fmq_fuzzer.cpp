@@ -36,8 +36,8 @@ using android::hardware::kUnsynchronizedWrite;
 
 typedef int32_t payload_t;
 
-// The reader will wait for 10 ms
-static constexpr int kBlockingTimeoutNs = 10000000;
+// The reader/writers will wait during blocking calls
+static constexpr int kBlockingTimeoutNs = 100000;
 
 /*
  * MessageQueueBase.h contains asserts when memory allocation fails. So we need
