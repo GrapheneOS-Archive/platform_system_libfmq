@@ -421,6 +421,11 @@ struct MessageQueueBase {
      */
     bool commitRead(size_t nMessages);
 
+    /**
+     * Get the pointer to the ring buffer. Useful for debugging and fuzzing.
+     */
+    uint8_t* getRingBufferPtr() const { return mRing; }
+
   private:
     size_t availableToWriteBytes() const;
     size_t availableToReadBytes() const;
