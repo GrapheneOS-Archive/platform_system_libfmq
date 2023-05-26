@@ -23,11 +23,14 @@ python_test_host {
     main: "fmq_test.py",
     srcs: ["fmq_test.py"],
     test_config: "fmq_test.xml",
-    target_required: [
+    data_device_bins_both: [
         "android.hardware.tests.msgq@1.0-service-test",
         "fmq_test_client",
     ],
-    test_suites: ["general-tests", "vts"],
+    test_suites: [
+        "general-tests",
+        "vts",
+    ],
     test_options: {
         unit_test: false,
     },
@@ -67,7 +70,7 @@ cc_test {
     ],
     whole_static_libs: [
         "android.hardware.tests.msgq@1.0-impl",
-        "android.fmq.test-impl"
+        "android.fmq.test-impl",
     ],
 
     compile_multilib: "both",
@@ -79,7 +82,10 @@ cc_test {
             suffix: "64",
         },
     },
-    test_suites: ["general-tests", "vts"],
+    test_suites: [
+        "general-tests",
+        "vts",
+    ],
     auto_gen_config: false,
 }
 
