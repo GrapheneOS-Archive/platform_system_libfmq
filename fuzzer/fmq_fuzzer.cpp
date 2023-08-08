@@ -44,7 +44,8 @@ static constexpr int kBlockingTimeoutNs = 10000000;
  * to set a reasonable limit if we want to avoid those asserts.
  */
 static constexpr size_t kAlignment = 8;
-static constexpr size_t kMaxNumElements = PAGE_SIZE * 10 / sizeof(payload_t) - kAlignment + 1;
+static const size_t kPageSize = getpagesize();
+static const size_t kMaxNumElements = kPageSize * 10 / sizeof(payload_t) - kAlignment + 1;
 
 /*
  * The read counter can be found in the shared memory 16 bytes before the start
