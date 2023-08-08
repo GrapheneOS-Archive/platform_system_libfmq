@@ -376,7 +376,8 @@ TEST_F(HidlOnlyBadQueueConfig, ExtentTooLarge) {
 
 // If this test fails and we do leak FDs, the next test will cause a crash
 TEST_F(AidlOnlyBadQueueConfig, LookForLeakedFds) {
-    size_t numElementsInQueue = SIZE_MAX / sizeof(uint32_t) - PAGE_SIZE - 1;
+    const size_t kPageSize = getpagesize();
+    size_t numElementsInQueue = SIZE_MAX / sizeof(uint32_t) - kPageSize - 1;
     struct rlimit rlim;
     ASSERT_EQ(getrlimit(RLIMIT_NOFILE, &rlim), 0);
     for (int i = 0; i <= rlim.rlim_cur + 1; i++) {

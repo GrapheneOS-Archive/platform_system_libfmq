@@ -460,6 +460,8 @@ struct MessageQueueBase {
      * lifetime.
      */
     android::hardware::EventFlag* mEventFlag = nullptr;
+
+    const size_t kPageSize = getpagesize();
 };
 
 template <template <typename, MQFlavor> typename MQDescriptorType, typename T, MQFlavor flavor>
@@ -699,12 +701,12 @@ MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(size_t numElemen
     if (bufferFd != -1) {
         // Allocate read counter and write counter only. User-supplied memory will be used for the
         // ringbuffer.
-        kAshmemSizePageAligned = (kMetaDataSize + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        kAshmemSizePageAligned = (kMetaDataSize + kPageSize - 1) & ~(kPageSize - 1);
     } else {
         // Allocate ringbuffer, read counter and write counter.
         kAshmemSizePageAligned = (hardware::details::alignToWordBoundary(kQueueSizeBytes) +
-                                  kMetaDataSize + PAGE_SIZE - 1) &
-                                 ~(PAGE_SIZE - 1);
+                                  kMetaDataSize + kPageSize - 1) &
+                                 ~(kPageSize - 1);
     }
 
     /*
@@ -1279,7 +1281,7 @@ void* MessageQueueBase<MQDescriptorType, T, flavor>::mapGrantorDescr(uint32_t gr
     }
 
     /*
-     * Offset for mmap must be a multiple of PAGE_SIZE.
+     * Offset for mmap must be a multiple of kPageSize.
      */
     if (!hardware::details::isAlignedToWordBoundary(grantors[grantorIdx].offset)) {
         hardware::details::logError("Grantor (index " + std::to_string(grantorIdx) +
@@ -1311,8 +1313,8 @@ void* MessageQueueBase<MQDescriptorType, T, flavor>::mapGrantorDescr(uint32_t gr
         }
     }
 
-    int mapOffset = (grantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
-    if (grantors[grantorIdx].extent < 0 || grantors[grantorIdx].extent > INT_MAX - PAGE_SIZE) {
+    int mapOffset = (grantors[grantorIdx].offset / kPageSize) * kPageSize;
+    if (grantors[grantorIdx].extent < 0 || grantors[grantorIdx].extent > INT_MAX - kPageSize) {
         hardware::details::logError(std::string("Grantor (index " + std::to_string(grantorIdx) +
                                                 ") extent value is too large or negative: " +
                                                 std::to_string(grantors[grantorIdx].extent)));
@@ -1337,7 +1339,7 @@ void MessageQueueBase<MQDescriptorType, T, flavor>::unmapGrantorDescr(void* addr
         return;
     }
 
-    int mapOffset = (grantors[grantorIdx].offset / PAGE_SIZE) * PAGE_SIZE;
+    int mapOffset = (grantors[grantorIdx].offset / kPageSize) * kPageSize;
     int mapLength = grantors[grantorIdx].offset - mapOffset + grantors[grantorIdx].extent;
     void* baseAddress =
             reinterpret_cast<uint8_t*>(address) - (grantors[grantorIdx].offset - mapOffset);
