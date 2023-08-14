@@ -421,6 +421,11 @@ struct MessageQueueBase {
      */
     bool commitRead(size_t nMessages);
 
+    /**
+     * Get the pointer to the ring buffer. Useful for debugging and fuzzing.
+     */
+    uint8_t* getRingBufferPtr() const { return mRing; }
+
   private:
     size_t availableToWriteBytes() const;
     size_t availableToReadBytes() const;
@@ -645,7 +650,8 @@ template <template <typename, MQFlavor> typename MQDescriptorType, typename T, M
 MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(const Descriptor& Desc,
                                                                 bool resetPointers) {
     mDesc = std::unique_ptr<Descriptor>(new (std::nothrow) Descriptor(Desc));
-    if (mDesc == nullptr) {
+    if (mDesc == nullptr || mDesc->getSize() == 0) {
+        hardware::details::logError("MQDescriptor is invalid or queue size is 0.");
         return;
     }
 
@@ -662,6 +668,10 @@ MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(size_t numElemen
         hardware::details::logError("Requested message queue size too large. Size of elements: " +
                                     std::to_string(sizeof(T)) +
                                     ". Number of elements: " + std::to_string(numElementsInQueue));
+        return;
+    }
+    if (numElementsInQueue == 0) {
+        hardware::details::logError("Requested queue size of 0.");
         return;
     }
     if (bufferFd != -1 && numElementsInQueue * sizeof(T) > bufferSize) {
@@ -769,10 +779,10 @@ MessageQueueBase<MQDescriptorType, T, flavor>::MessageQueueBase(size_t numElemen
 
 template <template <typename, MQFlavor> typename MQDescriptorType, typename T, MQFlavor flavor>
 MessageQueueBase<MQDescriptorType, T, flavor>::~MessageQueueBase() {
-    if (flavor == kUnsynchronizedWrite && mReadPtr != nullptr) {
-        delete mReadPtr;
-    } else if (mReadPtr != nullptr) {
+    if (flavor == kSynchronizedReadWrite && mReadPtr != nullptr) {
         unmapGrantorDescr(mReadPtr, hardware::details::READPTRPOS);
+    } else if (mReadPtr != nullptr) {
+        delete mReadPtr;
     }
     if (mWritePtr != nullptr) {
         unmapGrantorDescr(mWritePtr, hardware::details::WRITEPTRPOS);
@@ -1278,6 +1288,29 @@ void* MessageQueueBase<MQDescriptorType, T, flavor>::mapGrantorDescr(uint32_t gr
                                     ") offset needs to be aligned to word boundary but is: " +
                                     std::to_string(grantors[grantorIdx].offset));
         return nullptr;
+    }
+
+    /*
+     * Expect some grantors to be at least a min size
+     */
+    for (uint32_t i = 0; i < grantors.size(); i++) {
+        switch (i) {
+            case hardware::details::READPTRPOS:
+                if (grantors[i].extent < sizeof(uint64_t)) return nullptr;
+                break;
+            case hardware::details::WRITEPTRPOS:
+                if (grantors[i].extent < sizeof(uint64_t)) return nullptr;
+                break;
+            case hardware::details::DATAPTRPOS:
+                // We don't expect specific data size
+                break;
+            case hardware::details::EVFLAGWORDPOS:
+                if (grantors[i].extent < sizeof(uint32_t)) return nullptr;
+                break;
+            default:
+                // We don't care about unknown grantors
+                break;
+        }
     }
 
     int mapOffset = (grantors[grantorIdx].offset / kPageSize) * kPageSize;
