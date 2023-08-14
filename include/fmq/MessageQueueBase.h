@@ -1324,6 +1324,13 @@ void* MessageQueueBase<MQDescriptorType, T, flavor>::mapGrantorDescr(uint32_t gr
 
     void* address = mmap(0, mapLength, PROT_READ | PROT_WRITE, MAP_SHARED, handle->data[fdIndex],
                          mapOffset);
+    if (address == MAP_FAILED && errno == EPERM && flavor == kUnsynchronizedWrite) {
+        // If the supplied memory is read-only, it would fail with EPERM.
+        // Try again to mmap read-only for the kUnsynchronizedWrite case.
+        // kSynchronizedReadWrite cannot use read-only memory because the
+        // read pointer is stored in the shared memory as well.
+        address = mmap(0, mapLength, PROT_READ, MAP_SHARED, handle->data[fdIndex], mapOffset);
+    }
     if (address == MAP_FAILED) {
         hardware::details::logError(std::string("mmap failed: ") + std::to_string(errno));
         return nullptr;
