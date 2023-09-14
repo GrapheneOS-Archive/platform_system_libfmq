@@ -144,10 +144,10 @@ MQDescriptor<T, U> AidlMessageQueue<T, U>::dupeDesc() {
             ints.push_back(shim->handle()->data[data_index]);
         }
         return MQDescriptor<T, U>{
-                .quantum = static_cast<int32_t>(shim->getQuantum()),
                 .grantors = grantors,
-                .flags = static_cast<int32_t>(shim->getFlags()),
                 .handle = {std::move(fds), std::move(ints)},
+                .quantum = static_cast<int32_t>(shim->getQuantum()),
+                .flags = static_cast<int32_t>(shim->getFlags()),
         };
     } else {
         return MQDescriptor<T, U>();
