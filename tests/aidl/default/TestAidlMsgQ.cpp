@@ -60,7 +60,14 @@ ndk::ScopedAStatus TestAidlMsgQ::getFmqUnsyncWrite(
         *_aidl_return = false;
     } else {
         *mqDesc = std::move(mFmqUnsynchronized->dupeDesc());
-        *_aidl_return = true;
+        // set write-protection so readers can't mmap and write
+        int res = ashmem_set_prot_region(mqDesc->handle.fds[0].get(), PROT_READ);
+        if (res == -1) {
+            ALOGE("Failed to set write protection: %s", strerror(errno));
+            *_aidl_return = false;
+        } else {
+            *_aidl_return = true;
+        }
     }
 
     return ndk::ScopedAStatus::ok();
